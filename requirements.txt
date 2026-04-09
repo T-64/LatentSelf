@@ -5,5 +5,5 @@ huggingface_hub
 umap-learn
 hdbscan
 scikit-learn
-streamlit
+dash
 plotly

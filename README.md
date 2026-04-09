@@ -123,20 +123,20 @@ python -m latentself.engine.interpreter
 ### 4. Launch visualization
 
 ```bash
-streamlit run latentself/viz/app.py --server.address localhost
+python -m latentself.viz.app
 ```
 
 Open http://localhost:8501
 
 ## Visualization Features
 
-- **3D Constellation Map**: UMAP-projected sessions as interactive 3D scatter plot
-- **Cluster Detail Cards**: Each cluster has a name and deep semantic interpretation
-- **Cluster Comparison**: Side-by-side analysis of distinguishing embedding dimensions
-- **Dimension Heatmap**: Cluster x Dimension activation matrix (Z-Score)
-- **Focus Mode**: Select a cluster to highlight it, dimming all others
-- **Time Filtering**: Sidebar slider to filter sessions by date range
-- **Session Table**: Expandable list with cluster names and content previews
+- **3D Constellation Map**: UMAP-projected sessions as interactive 3D scatter plot with full drag/rotate/zoom
+- **Click-to-Dialogue**: Click any point in the 3D plot to instantly view the full multi-turn conversation (user prompts + AI responses) in the right panel
+- **Clickable Cluster Cards**: Click a cluster card in the sidebar to highlight that cluster in the 3D view (click again to deselect)
+- **Timeline Chart**: Stacked area chart showing cluster activity over time (weekly), with horizontal-only zoom
+- **Time Filtering**: Range slider to filter sessions by date
+- **Cluster Interpretations**: Each cluster has a name and deep semantic interpretation generated via statistical probing + LLM bridge
+- **Dark Theme**: Anthropic interpretability-inspired deep space aesthetic
 
 ## Interpretability Approach
 
@@ -150,10 +150,9 @@ This answers: **"What geometric structure in the latent space causes these sessi
 
 ## TODO
 
-- [ ] **Time-axis animation**: Animate the constellation over time to show how cognitive focus evolves (which clusters grow/shrink, when new topics emerge)
-- [ ] **Click-to-expand dialogue**: Click a point to see the full conversation (user prompts + AI responses) in a side panel
 - [ ] **Support for other chat exports**: ChatGPT, Claude, etc.
 - [ ] **Adaptive splitting threshold**: Auto-tune the semantic similarity threshold based on data distribution
+- [ ] **Time-axis animation**: Auto-play through time to show constellation evolution
 
 ## Tech Stack
 
@@ -163,7 +162,7 @@ This answers: **"What geometric structure in the latent space causes these sessi
 | Model Inference | vLLM v0.18 |
 | Dimensionality Reduction | UMAP (cosine metric, 3D projection) |
 | Clustering | HDBSCAN (density-based, min_cluster_size=10) |
-| Visualization | Streamlit + Plotly |
+| Visualization | Dash + Plotly (3-panel layout, click callbacks) |
 | Interpretability | Statistical probing + LLM-generated explanations |
 
 ## Privacy

@@ -173,8 +173,9 @@ def build_timeline(df):
     fig.update_layout(
         template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
         font=dict(color=TEXT, size=11), margin=dict(l=0, r=0, t=10, b=0), height=200,
-        xaxis=dict(gridcolor="#1a1f3a"), yaxis=dict(gridcolor="#1a1f3a", title="sessions/week"),
+        xaxis=dict(gridcolor="#1a1f3a"), yaxis=dict(gridcolor="#1a1f3a", title="sessions/week", fixedrange=True),
         legend=dict(orientation="h", y=1.15, font=dict(size=9)), hovermode="x unified",
+        dragmode="zoom",
     )
     return fig
 
@@ -261,7 +262,21 @@ app.title = "LatentSelf"
 app.index_string = '''<!DOCTYPE html>
 <html>
 <head>{%metas%}<title>{%title%}</title>{%favicon%}{%css%}
-<style>html,body{margin:0;padding:0;background:''' + BG + ''';overflow:hidden;}</style>
+<style>
+html,body{margin:0;padding:0;background:''' + BG + ''';overflow:hidden;color:''' + TEXT + ''';}
+/* Dash component text overrides for dark theme */
+.rc-slider-mark-text,.rc-slider-tooltip-inner,.rc-slider-mark span{color:''' + TEXT + '''!important;}
+.rc-slider-rail{background:''' + BORDER + '''!important;}
+.rc-slider-track{background:''' + ACCENT + '''!important;}
+.rc-slider-handle{border-color:''' + ACCENT + '''!important;}
+.rc-slider-tooltip-inner{background:''' + PANEL_BG + '''!important;}
+label,.form-check-label{color:''' + TEXT + '''!important;}
+input[type="checkbox"]{accent-color:''' + ACCENT + ''';}
+.Select-control,.Select-menu-outer,.Select-value-label,.Select-option{
+  background:''' + PANEL_BG + '''!important;color:''' + TEXT + '''!important;}
+.Select-placeholder{color:''' + TEXT_DIM + '''!important;}
+.is-focused .Select-control{border-color:''' + ACCENT + '''!important;}
+</style>
 </head>
 <body>{%app_entry%}{%config%}{%scripts%}{%renderer%}</body>
 </html>'''
@@ -286,7 +301,8 @@ app.layout = html.Div(style={"backgroundColor": BG, "color": TEXT, "fontFamily":
             id="time-slider",
             min=0, max=date_range_days, step=1,
             value=[0, date_range_days],
-            marks={0: str(min_date), date_range_days: str(max_date)},
+            marks={0: {"label": str(min_date), "style": {"color": TEXT_DIM}},
+                   date_range_days: {"label": str(max_date), "style": {"color": TEXT_DIM}}},
             tooltip={"placement": "bottom"},
         ),
 
