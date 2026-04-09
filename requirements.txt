@@ -1,0 +1,9 @@
+numpy
+pandas
+sentence-transformers
+huggingface_hub
+umap-learn
+hdbscan
+scikit-learn
+streamlit
+plotly
