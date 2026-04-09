@@ -1,8 +1,11 @@
 """
 LatentSelf — Interactive 3D Visualization with Interpretability Microscope
 
-Streamlit + Plotly: Anthropic interpretability 风格的 3D 星云散点图。
-包含聚类解释面板、对比模式、维度热力图。
+Features:
+  - 3D constellation map (Anthropic interpretability style)
+  - Cluster detail cards, comparison, dimension heatmap
+  - Time-axis animation: opacity-encoded temporal evolution + timeline chart
+  - Session dialogue browser: full conversation viewer
 """
 
 import json
@@ -40,17 +43,24 @@ CLUSTER_PALETTE = [
 ]
 
 
+# ═══════════════════════════════════════════
+# Data Loading
+# ═══════════════════════════════════════════
+
 @st.cache_data
 def load_data():
     with open(SESSION_PATH, "r", encoding="utf-8") as f:
         sessions = json.load(f)
 
     rows = []
+    dialogues_map = {}
     for s in sessions:
         coords = s["engine_data"]["umap_coords"]
         target = s["engine_data"]["embedding_target"]
+        sid = s["session_id"]
+
         rows.append({
-            "session_id": s["session_id"],
+            "session_id": sid,
             "start_time": s["metadata"]["start_time"],
             "turn_count": s["metadata"]["turn_count"],
             "cluster_id": s["engine_data"]["cluster_id"],
@@ -61,11 +71,12 @@ def load_data():
             "hover_text": target[:120] + ("..." if len(target) > 120 else ""),
             "full_text": target,
         })
+        dialogues_map[sid] = s["ui_data"]["dialogues"]
 
     df = pd.DataFrame(rows)
     df["start_time"] = pd.to_datetime(df["start_time"])
     df["date"] = df["start_time"].dt.date
-    return df
+    return df, dialogues_map
 
 
 @st.cache_data
@@ -76,16 +87,35 @@ def load_interpretations():
         return json.load(f)
 
 
-def build_figure(df: pd.DataFrame, highlight_cluster=None) -> go.Figure:
+# ═══════════════════════════════════════════
+# 3D Figure
+# ═══════════════════════════════════════════
+
+def build_figure(df: pd.DataFrame, highlight_cluster=None, time_anchor=None) -> go.Figure:
+    """Build 3D scatter. If time_anchor is set, encode opacity by recency."""
     fig = go.Figure()
+
+    # 时间 opacity 编码
+    if time_anchor is not None and len(df) > 0:
+        days_diff = (time_anchor - df["start_time"].dt.date).apply(lambda d: d.days)
+        max_days = max(days_diff.max(), 1)
+        # recency: 0 (oldest) → 1 (newest/at anchor)
+        recency = 1.0 - (days_diff / max_days).clip(0, 1)
+        # opacity: 0.08 (oldest) → 0.95 (newest)
+        opacity_arr = 0.08 + recency * 0.87
+    else:
+        opacity_arr = None
 
     # ── 噪声点 ──
     noise = df[df["cluster_id"] == -1]
     if len(noise) > 0:
+        n_opacity = opacity_arr[noise.index].values * 0.4 if opacity_arr is not None else 0.25
         fig.add_trace(go.Scatter3d(
             x=noise["x"], y=noise["y"], z=noise["z"],
             mode="markers",
-            marker=dict(size=3, color=NOISE_COLOR, opacity=0.25, line=dict(width=0)),
+            marker=dict(size=3, color=NOISE_COLOR,
+                        opacity=float(np.mean(n_opacity)) if opacity_arr is not None else 0.25,
+                        line=dict(width=0)),
             text=noise["hover_text"],
             customdata=np.stack([
                 noise["start_time"].dt.strftime("%Y-%m-%d %H:%M"),
@@ -105,13 +135,28 @@ def build_figure(df: pd.DataFrame, highlight_cluster=None) -> go.Figure:
         is_highlighted = highlight_cluster is not None and cid == highlight_cluster
         is_dimmed = highlight_cluster is not None and cid != highlight_cluster
 
+        if opacity_arr is not None:
+            c_opacity = opacity_arr[subset.index].values
+            if is_dimmed:
+                c_opacity = c_opacity * 0.2
+        else:
+            c_opacity = 0.95 if is_highlighted else (0.15 if is_dimmed else 0.85)
+
+        # For per-point opacity, use color with alpha
+        if isinstance(c_opacity, np.ndarray):
+            # Plotly Scatter3d doesn't support per-point opacity directly
+            # Workaround: use mean opacity per cluster trace
+            mean_op = float(np.mean(c_opacity))
+        else:
+            mean_op = c_opacity
+
         fig.add_trace(go.Scatter3d(
             x=subset["x"], y=subset["y"], z=subset["z"],
             mode="markers",
             marker=dict(
                 size=7 if is_highlighted else (3 if is_dimmed else 5),
                 color=color,
-                opacity=0.95 if is_highlighted else (0.15 if is_dimmed else 0.85),
+                opacity=mean_op,
                 line=dict(width=0.8 if is_highlighted else 0.3,
                           color="rgba(255,255,255,0.3)" if is_highlighted else "rgba(255,255,255,0.1)"),
             ),
@@ -150,8 +195,135 @@ def build_figure(df: pd.DataFrame, highlight_cluster=None) -> go.Figure:
     return fig
 
 
+# ═══════════════════════════════════════════
+# Timeline Chart
+# ═══════════════════════════════════════════
+
+def render_timeline(df: pd.DataFrame, labels: dict):
+    """Stacked area chart: cluster activity over time."""
+    if len(df) == 0:
+        return
+
+    # 按周分桶
+    df_t = df[df["cluster_id"] != -1].copy()
+    df_t["week"] = df_t["start_time"].dt.to_period("W").apply(lambda r: r.start_time)
+
+    # 取 top-8 最大的 cluster，其余归入 "Other"
+    top_clusters = df_t["cluster_id"].value_counts().head(8).index.tolist()
+    df_t["group"] = df_t["cluster_id"].apply(
+        lambda c: labels.get(str(c), {}).get("name", f"C{c}") if c in top_clusters else "Other"
+    )
+
+    pivot = df_t.groupby(["week", "group"]).size().unstack(fill_value=0)
+
+    fig = go.Figure()
+    # "Other" 先画（底层）
+    if "Other" in pivot.columns:
+        fig.add_trace(go.Scatter(
+            x=pivot.index, y=pivot["Other"],
+            mode="lines", stackgroup="one", name="Other",
+            line=dict(width=0), fillcolor="rgba(80,80,80,0.3)",
+        ))
+
+    # Top clusters
+    for cid in top_clusters:
+        name = labels.get(str(cid), {}).get("name", f"C{cid}")
+        if name not in pivot.columns:
+            continue
+        color = CLUSTER_PALETTE[cid % len(CLUSTER_PALETTE)]
+        fig.add_trace(go.Scatter(
+            x=pivot.index, y=pivot[name],
+            mode="lines", stackgroup="one", name=name,
+            line=dict(width=0.5, color=color),
+        ))
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=BG_COLOR, plot_bgcolor=BG_COLOR,
+        font=dict(color=TEXT_COLOR, size=11),
+        margin=dict(l=0, r=0, t=30, b=0), height=250,
+        title=dict(text="Cluster Activity Over Time (weekly)", font=dict(size=13)),
+        xaxis=dict(gridcolor=GRID_COLOR, title=""),
+        yaxis=dict(gridcolor=GRID_COLOR, title="Sessions / week"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    font=dict(size=10)),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ═══════════════════════════════════════════
+# Dialogue Browser
+# ═══════════════════════════════════════════
+
+def render_dialogue(session_id, dialogues_map, df):
+    """Render full multi-turn conversation for a session."""
+    dialogues = dialogues_map.get(session_id, [])
+    if not dialogues:
+        st.warning("No dialogue data found.")
+        return
+
+    row = df[df["session_id"] == session_id].iloc[0]
+    cname = row["cluster_name"]
+    cid = row["cluster_id"]
+    color = CLUSTER_PALETTE[cid % len(CLUSTER_PALETTE)] if cid >= 0 else NOISE_COLOR
+
+    # Session header
+    st.markdown(
+        f'<div style="background:{CARD_BG}; border:1px solid {CARD_BORDER}; '
+        f'border-left:4px solid {color}; border-radius:10px; padding:14px 18px; margin-bottom:16px;">'
+        f'<span style="color:{color}; font-weight:600; font-size:1rem;">{cname}</span>'
+        f'<span style="color:#666; font-size:0.8rem;"> &middot; {session_id} &middot; '
+        f'{row["start_time"].strftime("%Y-%m-%d %H:%M")} &middot; {row["turn_count"]} turns</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Render each turn
+    for d in dialogues:
+        turn = d["turn"]
+        ts = d["timestamp"]
+        prompt = d["user_prompt"]
+        response = d["ai_response"]
+
+        # User message
+        st.markdown(
+            f'<div style="background:#1a1f3a; border-radius:8px; padding:12px 16px; margin-bottom:4px;">'
+            f'<div style="color:{ACCENT_COLOR}; font-size:0.75rem; margin-bottom:4px;">'
+            f'User &middot; Turn {turn} &middot; {ts}</div>'
+            f'<div style="color:#e0e4ea; font-size:0.9rem; white-space:pre-wrap;">{_escape_html(prompt)}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # AI response
+        if response:
+            # Truncate very long responses for display
+            display_resp = response[:2000] + ("..." if len(response) > 2000 else "")
+            st.markdown(
+                f'<div style="background:#0d1230; border-left:2px solid #2a3050; '
+                f'border-radius:8px; padding:12px 16px; margin-bottom:12px;">'
+                f'<div style="color:#8890a4; font-size:0.75rem; margin-bottom:4px;">AI</div>'
+                f'<div style="color:#aab0be; font-size:0.85rem; white-space:pre-wrap;">{_escape_html(display_resp)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
+def _escape_html(text: str) -> str:
+    """Basic HTML escaping for display in markdown."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+# ═══════════════════════════════════════════
+# Cluster Panels (existing)
+# ═══════════════════════════════════════════
+
 def render_cluster_card(cid, interp_data, df, color):
-    """渲染单个 cluster 的详情卡片。"""
     labels = interp_data.get("cluster_labels", {})
     profiles = interp_data.get("cluster_profiles", {})
     label = labels.get(str(cid), {})
@@ -160,8 +332,6 @@ def render_cluster_card(cid, interp_data, df, color):
     name = label.get("name", f"Cluster {cid}")
     interpretation = label.get("interpretation", "")
     size = profile.get("size", 0)
-
-    # top 维度
     top_dims = profile.get("top_dimensions", [])[:5]
 
     st.markdown(
@@ -189,7 +359,6 @@ def render_cluster_card(cid, interp_data, df, color):
 
 
 def render_comparison(interp_data, cid_a, cid_b):
-    """渲染两个 cluster 的对比。"""
     comparisons = interp_data.get("comparisons", [])
     labels = interp_data.get("cluster_labels", {})
 
@@ -209,14 +378,12 @@ def render_comparison(interp_data, cid_a, cid_b):
         st.info(f"No pre-computed comparison for {name_a} vs {name_b}. Only top-3 largest clusters have comparisons.")
         return
 
-    # 区分维度 bar chart
     dims = comp["distinguishing_dims"]
-    dim_labels = [f"Dim {d['dim']}" for d in dims]
-    dim_values = [d["diff"] for d in dims]
-
     fig = go.Figure(go.Bar(
-        x=dim_values, y=dim_labels, orientation="h",
-        marker=dict(color=[color_a if v > 0 else color_b for v in dim_values]),
+        x=[d["diff"] for d in dims],
+        y=[f"Dim {d['dim']}" for d in dims],
+        orientation="h",
+        marker=dict(color=[color_a if d["diff"] > 0 else color_b for d in dims]),
     ))
     fig.update_layout(
         template="plotly_dark", paper_bgcolor=BG_COLOR, plot_bgcolor=BG_COLOR,
@@ -228,7 +395,6 @@ def render_comparison(interp_data, cid_a, cid_b):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 极端样本对比
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"**{name_a} side:**")
@@ -243,32 +409,26 @@ def render_comparison(interp_data, cid_a, cid_b):
 
 
 def render_heatmap(interp_data):
-    """渲染 cluster x dimension 激活热力图。"""
     profiles = interp_data.get("cluster_profiles", {})
     labels = interp_data.get("cluster_labels", {})
 
-    # 收集所有 cluster 的 top-3 维度
     all_dims = set()
-    for cid_str, prof in profiles.items():
+    for prof in profiles.values():
         for d in prof.get("top_dimensions", [])[:3]:
             all_dims.add(d["dim"])
-    all_dims = sorted(all_dims)[:25]  # 限制到 25 维
+    all_dims = sorted(all_dims)[:25]
 
     cluster_ids = sorted(int(k) for k in profiles.keys())
-    z_matrix = []
-    y_labels = []
+    z_matrix, y_labels = [], []
     for cid in cluster_ids:
         prof = profiles[str(cid)]
         name = labels.get(str(cid), {}).get("name", f"C{cid}")
         y_labels.append(f"{name} ({cid})")
         dim_map = {d["dim"]: d["z_score"] for d in prof.get("top_dimensions", [])}
-        row = [dim_map.get(dim, 0.0) for dim in all_dims]
-        z_matrix.append(row)
+        z_matrix.append([dim_map.get(dim, 0.0) for dim in all_dims])
 
     fig = go.Figure(go.Heatmap(
-        z=z_matrix,
-        x=[f"D{d}" for d in all_dims],
-        y=y_labels,
+        z=z_matrix, x=[f"D{d}" for d in all_dims], y=y_labels,
         colorscale="RdBu_r", zmid=0,
         colorbar=dict(title=dict(text="Z-Score", font=dict(color=TEXT_COLOR)), tickfont=dict(color=TEXT_COLOR)),
     ))
@@ -281,6 +441,10 @@ def render_heatmap(interp_data):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+
+# ═══════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════
 
 def main():
     st.set_page_config(page_title="LatentSelf", layout="wide", initial_sidebar_state="expanded")
@@ -304,7 +468,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    df = load_data()
+    df, dialogues_map = load_data()
     interp_data = load_interpretations()
     labels = interp_data.get("cluster_labels", {}) if interp_data else {}
 
@@ -318,13 +482,24 @@ def main():
         st.markdown("---")
 
         min_date, max_date = df["date"].min(), df["date"].max()
-        date_range = st.slider("Time Range", min_value=min_date, max_value=max_date,
-                               value=(min_date, max_date), format="YYYY-MM-DD")
+
+        # Animation mode
+        animation_mode = st.toggle("Animation Mode", value=False)
+
+        if animation_mode:
+            time_mode = st.radio("Mode", ["Cumulative", "Window"], horizontal=True)
+            anchor_date = st.slider("Time Cursor", min_value=min_date, max_value=max_date,
+                                    value=max_date, format="YYYY-MM-DD")
+            if time_mode == "Window":
+                window_days = st.slider("Window (days)", 7, 90, 30)
+        else:
+            date_range = st.slider("Time Range", min_value=min_date, max_value=max_date,
+                                   value=(min_date, max_date), format="YYYY-MM-DD")
+
         show_noise = st.checkbox("Show noise points", value=True)
 
         st.markdown("---")
 
-        # Cluster 选择器（用名字）
         cluster_options = {-1: "All Clusters"}
         for cid in sorted(df[df["cluster_id"] != -1]["cluster_id"].unique()):
             name = labels.get(str(cid), {}).get("name", f"Cluster {cid}")
@@ -337,7 +512,19 @@ def main():
                     unsafe_allow_html=True)
 
     # ── 过滤 ──
-    mask = (df["date"] >= date_range[0]) & (df["date"] <= date_range[1])
+    time_anchor = None
+    if animation_mode:
+        if time_mode == "Cumulative":
+            mask = df["date"] <= anchor_date
+            time_anchor = anchor_date
+        else:
+            from datetime import timedelta
+            window_start = anchor_date - timedelta(days=window_days)
+            mask = (df["date"] >= window_start) & (df["date"] <= anchor_date)
+            time_anchor = anchor_date
+    else:
+        mask = (df["date"] >= date_range[0]) & (df["date"] <= date_range[1])
+
     if not show_noise:
         mask = mask & (df["cluster_id"] != -1)
     filtered = df[mask]
@@ -349,34 +536,36 @@ def main():
     n_turns = int(filtered["turn_count"].sum())
 
     cols = st.columns(4)
-    for col, (num, label) in zip(cols, [
+    for col, (num, lbl) in zip(cols, [
         (str(n_sessions), "Sessions"), (str(n_clusters), "Clusters"),
         (str(n_noise), "Noise"), (str(n_turns), "Turns"),
     ]):
         col.markdown(f'<div class="stat-card"><div class="stat-number">{num}</div>'
-                     f'<div class="stat-label">{label}</div></div>', unsafe_allow_html=True)
+                     f'<div class="stat-label">{lbl}</div></div>', unsafe_allow_html=True)
 
     st.markdown("")
 
     # ── 3D 图 ──
     highlight = selected_cluster if selected_cluster != -1 else None
-    fig = build_figure(filtered, highlight_cluster=highlight)
+    fig = build_figure(filtered, highlight_cluster=highlight, time_anchor=time_anchor)
     st.plotly_chart(fig, use_container_width=True, config={
         "displayModeBar": True,
         "modeBarButtonsToRemove": ["toImage", "resetCameraLastSave3d"],
         "displaylogo": False,
     })
 
-    # ── Tab 面板: Cluster 详情 / 对比 / 热力图 / Sessions ──
+    # ── Timeline chart (always show, useful context) ──
+    render_timeline(df, labels)
+
+    # ── Tab 面板 ──
     if interp_data:
-        tab1, tab2, tab3, tab4 = st.tabs(["Cluster Details", "Comparison", "Heatmap", "Sessions"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Cluster Details", "Comparison", "Heatmap", "Dialogue Browser"])
 
         with tab1:
             if selected_cluster != -1 and selected_cluster is not None:
                 color = CLUSTER_PALETTE[selected_cluster % len(CLUSTER_PALETTE)]
                 render_cluster_card(selected_cluster, interp_data, filtered, color)
             else:
-                # 显示所有 cluster 卡片
                 for cid in sorted(labels.keys(), key=int):
                     cid_int = int(cid)
                     color = CLUSTER_PALETTE[cid_int % len(CLUSTER_PALETTE)]
@@ -408,11 +597,26 @@ def main():
             render_heatmap(interp_data)
 
         with tab4:
-            if len(filtered) > 0:
-                display = filtered[["start_time", "cluster_id", "cluster_name", "turn_count", "hover_text"]].copy()
-                display.columns = ["Time", "CID", "Cluster", "Turns", "Content"]
-                display = display.sort_values("Time", ascending=False)
-                st.dataframe(display, use_container_width=True, height=400)
+            # ── Dialogue Browser ──
+            st.markdown(f"<p style='color:#8890a4; font-size:0.85rem;'>Select a session to view the full conversation.</p>",
+                        unsafe_allow_html=True)
+
+            # Session selector
+            session_list = filtered.sort_values("start_time", ascending=False)
+            if len(session_list) > 0:
+                options = session_list["session_id"].tolist()
+                display_labels = {
+                    sid: f"{row['start_time'].strftime('%Y-%m-%d %H:%M')} | {row['cluster_name']} | {row['hover_text'][:60]}"
+                    for sid, row in session_list.set_index("session_id").iterrows()
+                }
+                selected_session = st.selectbox(
+                    "Session",
+                    options=options,
+                    format_func=lambda x: display_labels.get(x, x),
+                )
+                render_dialogue(selected_session, dialogues_map, df)
+            else:
+                st.info("No sessions in current filter range.")
 
 
 if __name__ == "__main__":
