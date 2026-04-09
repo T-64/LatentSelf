@@ -14,7 +14,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from dash import Dash, dcc, html, Input, Output, State, callback, no_update
+from dash import Dash, dcc, html, Input, Output, State, callback, no_update, ALL, ctx
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SESSION_PATH = ROOT / "data" / "processed" / "sessionized_data.json"
@@ -229,21 +229,24 @@ def render_dialogue_html(session_id):
 # Cluster cards
 # ═══════════════════════════════════════════
 
-def render_all_clusters_html():
+def render_all_clusters_html(selected_cid=None):
     children = []
     for cid_str in sorted(LABELS.keys(), key=int):
         cid = int(cid_str)
         color = PALETTE[cid % len(PALETTE)]
         label = LABELS[cid_str]
         size = INTERP.get("cluster_profiles", {}).get(cid_str, {}).get("size", 0)
+        is_selected = selected_cid == cid
         children.append(html.Div([
             html.Span(label.get("name", ""), style={"color": color, "fontWeight": "600"}),
             html.Span(f"  C{cid}  {size}s", style={"color": "#666", "fontSize": "0.8rem"}),
             html.Br(),
             html.Span(label.get("interpretation", ""), style={"color": "#999", "fontSize": "0.8rem"}),
-        ], style={"background": CARD_BG, "border": f"1px solid {BORDER}",
+        ], id={"type": "cluster-card", "index": cid}, n_clicks=0,
+           style={"background": CARD_BG, "border": f"2px solid {color}" if is_selected else f"1px solid {BORDER}",
                   "borderLeft": f"4px solid {color}", "borderRadius": "8px",
-                  "padding": "10px 14px", "marginBottom": "6px"}))
+                  "padding": "10px 14px", "marginBottom": "6px", "cursor": "pointer",
+                  "opacity": "1" if is_selected or selected_cid is None else "0.5"}))
     return children
 
 
@@ -254,14 +257,19 @@ def render_all_clusters_html():
 app = Dash(__name__)
 app.title = "LatentSelf"
 
+# Kill default white border/margin
+app.index_string = '''<!DOCTYPE html>
+<html>
+<head>{%metas%}<title>{%title%}</title>{%favicon%}{%css%}
+<style>html,body{margin:0;padding:0;background:''' + BG + ''';overflow:hidden;}</style>
+</head>
+<body>{%app_entry%}{%config%}{%scripts%}{%renderer%}</body>
+</html>'''
+
 min_date = DF["date"].min()
 max_date = DF["date"].max()
 date_range_days = (max_date - min_date).days
 
-cluster_options = [{"label": "All Clusters", "value": -1}]
-for cid in sorted(DF[DF["cluster_id"] != -1]["cluster_id"].unique()):
-    name = LABELS.get(str(cid), {}).get("name", f"Cluster {cid}")
-    cluster_options.append({"label": f"{cid}: {name}", "value": cid})
 
 app.layout = html.Div(style={"backgroundColor": BG, "color": TEXT, "fontFamily": "Inter, sans-serif",
                               "display": "flex", "height": "100vh", "overflow": "hidden"}, children=[
@@ -291,18 +299,10 @@ app.layout = html.Div(style={"backgroundColor": BG, "color": TEXT, "fontFamily":
             style={"fontSize": "0.85rem"},
         ),
 
-        html.Div(style={"height": "12px"}),
+        html.Hr(style={"borderColor": BORDER, "marginTop": "12px"}),
 
-        html.Label("Focus Cluster", style={"fontSize": "0.8rem", "color": TEXT_DIM}),
-        dcc.Dropdown(
-            id="cluster-focus",
-            options=cluster_options,
-            value=-1,
-            clearable=False,
-            style={"backgroundColor": PANEL_BG, "color": "#fff", "fontSize": "0.85rem"},
-        ),
-
-        html.Hr(style={"borderColor": BORDER, "marginTop": "16px"}),
+        # Hidden store for selected cluster
+        dcc.Store(id="cluster-focus", data=-1),
 
         html.P("Cluster Details", style={"color": ACCENT, "fontWeight": "600",
                                           "fontSize": "0.85rem", "margin": "0 0 8px 0"}),
@@ -346,13 +346,29 @@ app.layout = html.Div(style={"backgroundColor": BG, "color": TEXT, "fontFamily":
 # ═══════════════════════════════════════════
 
 @callback(
+    Output("cluster-focus", "data"),
+    Input({"type": "cluster-card", "index": ALL}, "n_clicks"),
+    State("cluster-focus", "data"),
+    prevent_initial_call=True,
+)
+def on_cluster_card_click(n_clicks_list, current_focus):
+    if not ctx.triggered_id or not any(n_clicks_list):
+        return no_update
+    clicked_cid = ctx.triggered_id["index"]
+    # Toggle: click same cluster again → deselect
+    if clicked_cid == current_focus:
+        return -1
+    return clicked_cid
+
+
+@callback(
     Output("scatter-3d", "figure"),
     Output("timeline", "figure"),
     Output("stats-bar", "children"),
     Output("cluster-cards", "children"),
     Input("time-slider", "value"),
     Input("show-noise", "value"),
-    Input("cluster-focus", "value"),
+    Input("cluster-focus", "data"),
 )
 def update_main(time_range, show_noise, focus_cluster):
     d0 = min_date + timedelta(days=time_range[0])
@@ -366,7 +382,6 @@ def update_main(time_range, show_noise, focus_cluster):
     fig3d = build_3d(filtered, highlight_cluster=hl)
     timeline = build_timeline(filtered)
 
-    # Stats
     n_sess = len(filtered)
     n_clust = filtered[filtered["cluster_id"] != -1]["cluster_id"].nunique()
     n_noise = int((filtered["cluster_id"] == -1).sum())
@@ -383,9 +398,8 @@ def update_main(time_range, show_noise, focus_cluster):
     stats = [stat_card(n_sess, "Sessions"), stat_card(n_clust, "Clusters"),
              stat_card(n_noise, "Noise"), stat_card(n_turns, "Turns")]
 
-    clusters = render_all_clusters_html()
+    clusters = render_all_clusters_html(selected_cid=hl)
     return fig3d, timeline, stats, clusters
-
 
 @callback(
     Output("dialogue-panel", "children"),
