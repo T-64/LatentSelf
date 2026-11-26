@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.db-*
+.DS_Store
+# personal data never lives in the repo
+data/
+*.egg-info/
