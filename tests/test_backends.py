@@ -3,15 +3,31 @@ from http.client import IncompleteRead
 import io
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 import numpy as np
 
-from latentself.backends import post
+from latentself.backends import InferenceHTTPError, InferenceUnavailable, post
 from latentself.backends.embed import Embedder, TEXT, VL
 from latentself.backends.llm import LocalLLM
 
 
 class BackendTest(unittest.TestCase):
+    @patch("latentself.backends.sleep")
+    @patch("latentself.backends.build_opener")
+    def test_read_timeouts_and_temporary_service_errors_leave_inputs_pending(self, build, sleep):
+        url = "http://127.0.0.1:8001/test"
+        opener = build.return_value
+        opener.open.side_effect = TimeoutError("read timed out")
+        with self.assertRaises(InferenceUnavailable):
+            post(url, {})
+        self.assertEqual(opener.open.call_count, 2)
+        for status in (429, 502, 503, 504, 422):
+            with self.subTest(status=status):
+                opener.open.side_effect = HTTPError(url, status, "fixture", {}, None)
+                with self.assertRaises(InferenceHTTPError if status == 422 else InferenceUnavailable):
+                    post(url, {})
+
     @patch("latentself.backends.sleep")
     @patch("latentself.backends.build_opener")
     def test_partial_response_retries_once_without_returning_partial_data(self, build, sleep):
