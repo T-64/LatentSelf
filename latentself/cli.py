@@ -15,7 +15,7 @@ import textwrap
 from pathlib import Path
 
 from . import config
-from .db import connect
+from .db import connect, connect_core
 from .sources import conversation_url, turn_order
 
 DIALOGUE_SQL = "('prompt','branch','link_import','live','canvas')"
@@ -28,11 +28,10 @@ def _con():
 def cmd_ingest(a):
     if a.source == "aistudio":
         from .ingest import aistudio
-        from .db import connect_for_source_import
         from contextlib import closing
         if not a.snapshot:
             raise ValueError("AI Studio import needs --snapshot DIR")
-        with closing(connect_for_source_import(config.DB_PATH)) as con:
+        with closing(connect_core(config.DB_PATH)) as con:
             print(json.dumps(aistudio.ingest(con, a.snapshot), ensure_ascii=False, indent=2))
         return
     from .ingest import gemini
@@ -43,13 +42,13 @@ def cmd_ingest(a):
 
 
 def cmd_stats(a):
-    con = _con()
+    con = connect_core(config.DB_PATH)
     q = lambda s, *p: con.execute(s, p).fetchall()
     print("snapshot     ", dict(q("SELECT k, v FROM meta")))
     print("turns by kind", dict(q("SELECT kind, COUNT(*) FROM turn GROUP BY kind ORDER BY 2 DESC")))
     print("conversations", q("SELECT COUNT(*) FROM conversation")[0][0])
     print("attachments  ", dict(q("SELECT match, COUNT(*) FROM attachment GROUP BY match")))
-    print("time range   ", tuple(q("SELECT MIN(ts), MAX(ts) FROM turn")[0]))
+    print("time range   ", tuple(q("SELECT MIN(NULLIF(ts,'')), MAX(NULLIF(ts,'')) FROM turn")[0]))
 
 
 def _matching_turns(con, text, answers):
@@ -58,7 +57,7 @@ def _matching_turns(con, text, answers):
 
 
 def cmd_grep(a):
-    con = _con()
+    con = connect_core(config.DB_PATH)
     ids = _matching_turns(con, a.text, a.answers)
     if not ids:
         print("no match")
@@ -75,7 +74,7 @@ def cmd_grep(a):
         GROUP BY tc.conv_id ORDER BY hit_ts""").fetchall()
     print(f"{len(rows)} conversations, {len(ids)} matching turns\n")
     for r in rows[-a.n:] if a.n else rows:
-        first = con.execute("SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live') ORDER BY t.ts LIMIT 1", (r["conv_id"],)).fetchone()
+        first = con.execute(f"SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live') ORDER BY {turn_order(con,r['conv_id'])} LIMIT 1", (r["conv_id"],)).fetchone()
         print(f"■ {r['first_ts'][:10]} → {r['last_ts'][:10]}  {r['n_turns']}轮  {r['hits']}处命中  {r['conv_id']}")
         print(f"  开头: {_clip(first[0] if first else '', 70)}")
         for tid in r["turn_ids"].split(",")[:3]:
@@ -88,7 +87,7 @@ def cmd_grep(a):
 
 
 def cmd_show(a):
-    con = _con()
+    con = connect_core(config.DB_PATH)
     c = con.execute("SELECT * FROM conversation WHERE id=?", (a.conv_id,)).fetchone()
     if not c:
         sys.exit(f"unknown conversation {a.conv_id}")
@@ -110,7 +109,7 @@ def cmd_show(a):
 
 
 def cmd_open(a):
-    con = _con()
+    con = connect_core(config.DB_PATH)
     r = con.execute("SELECT path FROM attachment WHERE id=?", (a.attachment_id,)).fetchone()
     if not r or not r["path"]:
         sys.exit("attachment not found on disk")
@@ -125,7 +124,7 @@ def _clip(s, n):
 def cmd_enrich(a):
     from .backends.llm import LocalLLM
     from .enrich import enrich
-    result = enrich(_con(), LocalLLM(), do_images=a.images or not a.docs,
+    result = enrich(connect_core(config.DB_PATH), LocalLLM(), do_images=a.images or not a.docs,
                     do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors, source=a.source)
     print(json.dumps(result, ensure_ascii=False))
     if result["failed"] or result.get("interrupted"):
@@ -170,7 +169,7 @@ def cmd_search(a):
         return
     if not a.query:
         raise ValueError("supply a search query or --feature")
-    result = search(_con(),a.query,mode="strict" if a.strict else "fast",images_only=a.images,
+    result = search(connect_core(config.DB_PATH),a.query,mode="strict" if a.strict else "fast",images_only=a.images,
                     answers=a.answers,terms=a.terms.split(",") if a.terms is not None else None,
                     since=a.since,until=a.until,sort=a.sort)
     if a.json:

@@ -180,8 +180,8 @@ def connect(path: Path) -> sqlite3.Connection:
     return con
 
 
-def connect_for_source_import(path: Path) -> sqlite3.Connection:
-    """A new source needs the shared v2 tables, independently of later phase migrations."""
+def connect_core(path: Path) -> sqlite3.Connection:
+    """Core ingest, search and browsing need only the shared v2 tables."""
     if path.is_file():
         con = sqlite3.connect(path)
         con.row_factory = sqlite3.Row

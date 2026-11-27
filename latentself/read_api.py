@@ -97,7 +97,7 @@ class Reader:
         with closing(readonly(self.path)) as db:
             found = db.execute("""SELECT tc.conv_id,c.title,s.summary,s.kinds,min(t.ts) AS first_ts,max(t.ts) AS last_ts
                 FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id JOIN conversation c ON c.id=tc.conv_id
-                JOIN conv_summary s ON s.conv_id=c.id WHERE substr(t.ts,1,length(?))>=? AND substr(t.ts,1,length(?))<=?
+                JOIN conv_summary s ON s.conv_id=c.id WHERE t.ts!='' AND substr(t.ts,1,length(?))>=? AND substr(t.ts,1,length(?))<=?
                 GROUP BY tc.conv_id ORDER BY first_ts,tc.conv_id""",(since,since,until,until))
             records = []
             for r in found:

@@ -262,7 +262,7 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
     policy = read_policy(con) if policy is None else policy
     notices = []
     stats = dict(vector_turns_omitted=0,conversations_omitted=0,judge_prompt_chars_omitted=0)
-    where = []
+    where = ["ts!=''"] if since or until else []
     params = []
     for op,bound in ((">=",since),("<=",until)):
         if bound:
