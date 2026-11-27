@@ -5,6 +5,9 @@ description = "Local personal data base over AI chat history: search, profile, r
 requires-python = ">=3.12"
 dependencies = ["numpy", "mcp>=2.3,<3"]
 
+[project.optional-dependencies]
+topics = ["igraph", "leidenalg"]
+
 [project.scripts]
 lself = "latentself.cli:main"
 latentself-mcp = "latentself.mcp_server:main"
