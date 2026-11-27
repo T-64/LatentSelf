@@ -43,8 +43,10 @@ class SearchTest(unittest.TestCase):
 
     def test_judgments_are_cached_and_invalidate_on_evidence_change(self):
         def judge(messages):
-            return {"results":[{"conv_id":c["conv_id"],"relevant":c["conv_id"]!="cd","reason":"fixture"}
-                               for c in json.loads(messages[-1]["content"])["candidates"]]}
+            candidates = json.loads(messages[-1]["content"])["candidates"]
+            self.assertTrue(all(c["conv_id"].isdecimal() for c in candidates))
+            return {"results":[{"conv_id":c["conv_id"],"relevant":any(s in c["excerpt"] for s in
+                               ("sample 1","sample 2","changed green")),"reason":"fixture"} for c in reversed(candidates)]}
         llm = FakeLLM(judge)
         for _ in range(2):
             out = self.run_search(mode="strict",llm=llm)
@@ -66,8 +68,9 @@ class SearchTest(unittest.TestCase):
     def test_incomplete_batch_retries_only_unresolved_id(self):
         calls = []
         def judge(messages):
-            ids = [c["conv_id"] for c in json.loads(messages[-1]["content"])["candidates"]]
-            calls.append(ids)
+            candidates = json.loads(messages[-1]["content"])["candidates"]
+            ids = [c["conv_id"] for c in candidates]
+            calls.append([c["excerpt"] for c in candidates])
             if len(ids)>1:
                 ids = ids[:-1]
             return {"results":[{"conv_id":cid,"relevant":True,"reason":"fixture"} for cid in ids]}

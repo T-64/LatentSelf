@@ -48,7 +48,7 @@ class CalibrationTest(unittest.TestCase):
                 if "candidates" not in messages[-1]["content"]:
                     return {"terms":[f"alias{i}" for i in range(8)]}
                 batch = json.loads(messages[-1]["content"])["candidates"]
-                return {"results":[{"conv_id":r["conv_id"],"relevant":r["conv_id"]=="aa","reason":"fixture"} for r in batch]}
+                return {"results":[{"conv_id":r["conv_id"],"relevant":"fixture" in r["excerpt"],"reason":"fixture"} for r in batch]}
             llm = FakeLLM(reply)
             class Reranker:
                 model = "fixture-reranker"
