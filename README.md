@@ -139,4 +139,6 @@ lself search --feature 123 --json
 
 在共用一张显卡时，可以先为每个实验运行条件执行 `lself interp experiment --model … --precision … --stage prepare`。停掉读者、启动本地 LLM 后，使用同样的参数和 `--stage score`。前一步只需要读者，后一步从 Mac 的私有检查点读取样本并打分。全量特征命名 `lself interp label` 也支持这两个阶段。
 
+单独验证公式时可运行 `lself interp experiment --model 9b --precision bf16 --stage pilot`。它使用同一批 2,000 个单元中的前 100 个，逐层比较两种公式并保存检查点。`--stage prepare` 遇到相同输入会复用这些计算。
+
 话题聚类默认在服务器运行 Leiden。运行 `bash scripts/server/setup-analysis.sh` 可在服务器建立隔离的 Python 环境。Mac 只通过 SSH 发送本次计算的整数节点编号、邻接边及权重，返回四层社区编号。已在本机安装可选依赖时也可使用 `lself topics build --compute local`。
