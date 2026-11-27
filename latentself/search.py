@@ -46,18 +46,27 @@ def remember(con, key, kind, value):
             (key,kind,json.dumps(value,ensure_ascii=False)))
 
 
+def expansion_key(llm,query):
+    return _key("expand-v1",llm.model,query)
+
+
+def request_terms(llm,query):
+    schema = {"type":"object","additionalProperties":False,"properties":{"terms":{"type":"array","minItems":8,"maxItems":15,
+              "items":{"type":"string"}}},"required":["terms"]}
+    reply = llm.chat([{"role":"system","content":"返回 JSON 对象，terms 数组包含8至15个检索词，"
+                        "覆盖查询主题的中文同义词、上下位词及英德说法。"},
+                      {"role":"user","content":query}],json_schema=schema,max_tokens=512)
+    terms = reply["terms"]
+    if not isinstance(terms,list) or not all(isinstance(t,str) for t in terms):
+        raise ValueError("invalid query expansion")
+    return terms
+
+
 def expand(con, llm, query):
-    key = _key("expand-v1",llm.model,query)
+    key = expansion_key(llm,query)
     terms = cached(con,key)
     if terms is None:
-        schema = {"type":"object","additionalProperties":False,"properties":{"terms":{"type":"array","minItems":8,"maxItems":15,
-                  "items":{"type":"string"}}},"required":["terms"]}
-        reply = llm.chat([{"role":"system","content":"返回 JSON 对象，terms 数组包含8至15个检索词，"
-                            "覆盖查询主题的中文同义词、上下位词及英德说法。"},
-                          {"role":"user","content":query}],json_schema=schema,max_tokens=512)
-        terms = reply["terms"]
-        if not isinstance(terms,list) or not all(isinstance(t,str) for t in terms):
-            raise ValueError("invalid query expansion")
+        terms = request_terms(llm,query)
         remember(con,key,"expand",terms)
     return terms
 
@@ -250,13 +259,6 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
     policy = read_policy(con) if policy is None else policy
     notices = []
     stats = dict(vector_turns_omitted=0,conversations_omitted=0,judge_prompt_chars_omitted=0)
-    if terms is None:
-        try:
-            terms = expand(con,llm,query)
-        except OSError:
-            terms = []
-            notices.append("查询扩展服务不可用，使用原词。")
-    terms = list(dict.fromkeys(t for t in (query,*terms) if t))
     where = []
     params = []
     for op,bound in ((">=",since),("<=",until)):
@@ -268,21 +270,35 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
                       AND (mime LIKE 'image/%' OR origin='live_frame'))""")
     sql = "SELECT id FROM turn t" + (" WHERE "+" AND ".join(where) if where else "")
     eligible = {r[0] for r in con.execute(sql,params)}
+    if terms is None:
+        key = expansion_key(llm,query)
+        terms = cached(con,key)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        # Only the model request runs on the worker. SQLite stays on its opening thread.
+        pending = worker.submit(request_terms,llm,query) if terms is None else None
+        indexes = configured_indexes(con,policy) if indexes is None else indexes
+        vector = {}
+        for idx in indexes:
+            try:
+                values,dropped = idx.recall(query,eligible,policy.get("threshold"),top_k)
+                stats["vector_turns_omitted"] += dropped
+                for tid,s in values.items():
+                    vector[tid] = max(vector.get(tid,-1.0),s)
+            except OSError:
+                notices.append("向量服务不可用：" + idx.backend.model)
+        if pending is not None:
+            try:
+                terms = pending.result()
+                remember(con,key,"expand",terms)
+            except OSError:
+                terms = []
+                notices.insert(0,"查询扩展服务不可用，使用原词。")
+    terms = list(dict.fromkeys(t for t in (query,*terms) if t))
     keywords = defaultdict(int)
     for term in terms:
         for tid in matching_turns(con,term,answers):
             if tid in eligible:
                 keywords[tid] += 1
-    vector = {}
-    indexes = configured_indexes(con,policy) if indexes is None else indexes
-    for idx in indexes:
-        try:
-            values,dropped = idx.recall(query,eligible,policy.get("threshold"),top_k)
-            stats["vector_turns_omitted"] += dropped
-            for tid,s in values.items():
-                vector[tid] = max(vector.get(tid,-1.0),s)
-        except OSError:
-            notices.append("向量服务不可用：" + idx.backend.model)
     if not vector:
         notices.insert(0,"仅关键词检索：当前查询没有可用的向量命中。")
     elif "threshold" not in policy:
