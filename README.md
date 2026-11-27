@@ -47,6 +47,8 @@ scripts/server/down.sh embed
 
 如果已有 Qwen 栈发布到所有网卡，可运行 `scripts/server/up.sh llm-private`。它使用已安装的镜像和只读模型目录，在服务器回环端口 8010 提供独立的单槽实例。将 SSH 隧道的本地 18000 转发到远端 8010，并设置 `LATENTSELF_LLM_URL=http://127.0.0.1:18000/v1`。结束后运行 `scripts/server/down.sh llm-private`。
 
+向量服务默认按单模型运行分配显存，`LATENTSELF_GPU_MEMORY_FRACTION` 可指定 vLLM 使用的显存比例。比较模型时可依次加载，每种模型的评测查询向量会保存在 Mac 的私有评测库中。
+
 ### 模型比较与验收
 
 私有查询文件默认为 `$LATENTSELF_DATA/processed/latentself/eval/queries.yaml`，顶层 `queries` 列表的每项使用 `q`，照片项加 `photo: true`。标签保存在同目录的 `labels.sqlite3`。以下步骤先构建小范围比较语料（扩展关键词命中和照片轮次），模型选择之后再建立全量索引。
