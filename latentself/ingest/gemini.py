@@ -149,7 +149,12 @@ def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
         for pos, name in enumerate(stored):
             path, match = resolver.resolve(name)
             mime = mimetypes.guess_type(name)[0]
-            atts.append((f"{tid}:{pos}", tid, pos, orig.get(name), name, str(path) if path else None, match, mime))
+            origin = "user"
+            if name.startswith("watermarked_img_"):
+                origin = "generated"
+            elif kind == "live" and name.lower().endswith(".zip"):
+                origin = "live_frame"
+            atts.append((f"{tid}:{pos}", tid, pos, orig.get(name), name, str(path) if path else None, match, mime, origin))
         if kind == "canvas":
             subs = e.get("subtitles") or []
             content = subs[0]["name"] if subs else None
@@ -157,21 +162,22 @@ def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
         elif kind in ("feedback", "draft_select"):
             signals.append((tid, kind, prompt or None))
 
-    con.execute("BEGIN")
-    con.executemany("INSERT OR REPLACE INTO turn VALUES (?,?,?,?,?,?)", rows)
-    ids = [(r[0],) for r in rows]
-    for table in ("turn_conv", "answer", "attachment", "canvas", "signal"):
-        con.executemany(f"DELETE FROM {table} WHERE turn_id = ?", ids)
-    con.executemany("INSERT OR IGNORE INTO turn_conv VALUES (?,?,?)", convs)
-    con.executemany("INSERT INTO answer VALUES (?,?,?,?)", answers)
-    con.executemany("INSERT INTO attachment (id, turn_id, pos, orig_name, stored_name, path, match, mime) VALUES (?,?,?,?,?,?,?,?)", atts)
-    con.executemany("INSERT INTO canvas VALUES (?,?,?)", canvases)
-    con.executemany("INSERT INTO signal (turn_id, kind, value) VALUES (?,?,?)", signals)
-    _link_by_time(con)
-    _rebuild_conversations(con)
-    _rebuild_fts(con)
-    con.execute("INSERT OR REPLACE INTO meta VALUES ('gemini_snapshot', ?)", (snap,))
-    con.commit()
+    with con:
+        con.executemany("""INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot, kind=excluded.kind,
+            ts=excluded.ts, prompt=excluded.prompt""", rows)
+        ids = [(r[0],) for r in rows]
+        for table in ("turn_conv", "answer", "canvas", "signal"):
+            con.executemany(f"DELETE FROM {table} WHERE turn_id = ?", ids)
+        con.executemany("INSERT OR IGNORE INTO turn_conv VALUES (?,?,?)", convs)
+        con.executemany("INSERT INTO answer VALUES (?,?,?,?)", answers)
+        _merge_attachments(con, ids, atts)
+        con.executemany("INSERT INTO canvas VALUES (?,?,?)", canvases)
+        con.executemany("INSERT INTO signal (turn_id, kind, value) VALUES (?,?,?)", signals)
+        _link_by_time(con)
+        _rebuild_conversations(con)
+        _rebuild_fts(con)
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('gemini_snapshot', ?)", (snap,))
 
     stats.update({
         "turns": len(rows),
@@ -183,6 +189,25 @@ def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
         "signals_linked": con.execute("SELECT COUNT(*) FROM signal WHERE target_id IS NOT NULL").fetchone()[0],
     })
     return stats
+
+
+def _merge_attachments(con, turn_ids, attachments):
+    # Positions identify attachments within a turn. A new file at the same
+    # position must not inherit the previous file's caption or image vector.
+    con.execute("CREATE TEMP TABLE incoming_file (id TEXT PRIMARY KEY, stored_name TEXT)")
+    con.executemany("INSERT OR IGNORE INTO incoming_file VALUES (?,?)", ((a[0], a[4]) for a in attachments))
+    con.executemany("""DELETE FROM attachment WHERE turn_id=? AND NOT EXISTS (
+        SELECT 1 FROM incoming_file i WHERE i.id=attachment.id AND i.stored_name=attachment.stored_name
+    )""", turn_ids)
+    con.execute("""DELETE FROM embedding WHERE item_kind='attachment'
+        AND NOT EXISTS (SELECT 1 FROM attachment WHERE id=embedding.item_id)""")
+    con.execute("""DELETE FROM embedding WHERE item_kind IN ('turn','turn_self')
+        AND NOT EXISTS (SELECT 1 FROM turn WHERE id=embedding.item_id)""")
+    con.executemany("""INSERT INTO attachment
+        (id,turn_id,pos,orig_name,stored_name,path,match,mime,origin) VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET orig_name=excluded.orig_name, path=excluded.path,
+        match=excluded.match, mime=excluded.mime, origin=excluded.origin""", attachments)
+    con.execute("DROP TABLE incoming_file")
 
 
 def _link_by_time(con):
@@ -209,13 +234,16 @@ def _link_by_time(con):
 
 
 def _rebuild_conversations(con):
-    con.execute("DELETE FROM conversation WHERE source=?", (SOURCE,))
+    con.execute("""DELETE FROM conversation WHERE source=? AND NOT EXISTS (
+        SELECT 1 FROM turn_conv WHERE conv_id=conversation.id)""", (SOURCE,))
     con.execute("""
         INSERT INTO conversation (id, source, first_ts, last_ts, n_turns)
         SELECT tc.conv_id, ?, MIN(t.ts), MAX(t.ts), SUM(t.kind IN ('prompt','branch','link_import','live'))
         FROM turn_conv tc JOIN turn t ON t.id = tc.turn_id
         WHERE t.source = ?
-        GROUP BY tc.conv_id""", (SOURCE, SOURCE))
+        GROUP BY tc.conv_id
+        ON CONFLICT(id) DO UPDATE SET first_ts=excluded.first_ts, last_ts=excluded.last_ts,
+        n_turns=excluded.n_turns""", (SOURCE, SOURCE))
 
 
 def _rebuild_fts(con):
