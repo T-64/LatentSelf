@@ -282,6 +282,25 @@ def cmd_features(a):
     print(json.dumps(build(con,Client(),selected(con),config.OUT,a.limit),ensure_ascii=False))
 
 
+def cmd_catalog(a):
+    import os
+    from .catalog import aliases,import_catalog
+    from .film_metadata import enrich,TMDB
+    con = _con()
+    if a.action=="import":
+        source = os.environ.get("LATENTSELF_CATALOG_SRC")
+        if not source:
+            raise ValueError("set LATENTSELF_CATALOG_SRC to the catalog directory")
+        result = import_catalog(con,source)
+    elif a.action=="enrich":
+        result = enrich(con,TMDB(),a.limit)
+    else:
+        result = aliases(con)
+    print(json.dumps(result,ensure_ascii=False))
+    if result.get("failed"):
+        sys.exit(1)
+
+
 def cmd_topics(a):
     from .analysis.report import analyze
     from .backends.embed import VL
@@ -317,6 +336,10 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("catalog",help="import films and enrich public metadata by identifier")
+    s.add_argument("action",choices=("import","enrich","aliases"))
+    s.add_argument("--limit",type=int)
+    s.set_defaults(f=cmd_catalog)
     s = sub.add_parser("features",help="render the private static feature dashboard")
     s.add_argument("action",choices=("build-dashboard",))
     s.add_argument("--limit",type=int)
