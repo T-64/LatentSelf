@@ -1,11 +1,14 @@
 """Hybrid turn retrieval, conversation aggregation and cached relevance judgments."""
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import base64
 import binascii
 from hashlib import sha1
 from itertools import batched
 import json
 import math
+import os
 
 import numpy as np
 
@@ -202,17 +205,28 @@ def _judge(con,llm,query,items,policy,reranker,use_cache=True):
                         remember(con,key,"judge",value)
                     verdicts[cid] = value
         pending = border
-    for batch in batched(pending,9):
+    def judge_batch(batch):
         rows = _judge_batch(llm,query,batch)
         for entry in batch:
-            cid,_,key = entry
+            cid = entry[0]
             if cid not in rows:
                 rows.update(_judge_batch(llm,query,[entry]))
             if cid not in rows:
                 raise ValueError("incomplete relevance judgment after single-candidate retry")
-            if use_cache:
-                remember(con,key,"judge",rows[cid])
-            verdicts[cid] = rows[cid]
+        return rows
+
+    if pending:
+        workers = int(os.environ.get("LATENTSELF_JUDGE_SLOTS","1"))
+        if workers not in (1,2,3,4):
+            raise ValueError("LATENTSELF_JUDGE_SLOTS must be between 1 and 4")
+        with (ThreadPoolExecutor(max_workers=workers) if workers > 1 else nullcontext()) as executor:
+            apply_batches = executor.map if executor else map
+            for wave in batched(batched(pending,9),workers):
+                for batch,rows in zip(wave,apply_batches(judge_batch,wave),strict=True):
+                    for cid,_,key in batch:
+                        if use_cache:
+                            remember(con,key,"judge",rows[cid])
+                        verdicts[cid] = rows[cid]
     return verdicts
 
 
