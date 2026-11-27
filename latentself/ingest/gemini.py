@@ -248,7 +248,7 @@ def _link_by_time(con):
         target = nearest_before(r["ts"])
         if target:
             con.execute("INSERT OR IGNORE INTO turn_conv SELECT ?, conv_id, 1 FROM turn_conv WHERE turn_id=?", (r["id"], target))
-    for r in con.execute("SELECT s.turn_id, t.ts FROM signal s JOIN turn t ON t.id=s.turn_id").fetchall():
+    for r in con.execute("SELECT s.turn_id, t.ts FROM signal s JOIN turn t ON t.id=s.turn_id WHERE t.source=?",(SOURCE,)).fetchall():
         con.execute("UPDATE signal SET target_id=? WHERE turn_id=?", (nearest_before(r["ts"]), r["turn_id"]))
 
 
