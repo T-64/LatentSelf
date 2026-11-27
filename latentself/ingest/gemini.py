@@ -9,6 +9,7 @@ import mimetypes
 import re
 import sqlite3
 from bisect import bisect_right
+from collections import defaultdict
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -89,9 +90,13 @@ def html_to_text(html: str) -> str:
 class AttachmentResolver:
     """Takeout stores files flat; names sometimes lose their extension or gain (n) on collision."""
 
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, referenced=()):
         self.folder = folder
-        self.names = set(p.name for p in folder.iterdir()) if folder.exists() else set()
+        self.names = {p.name for p in folder.iterdir() if p.is_file()} if folder.exists() else set()
+        self.by_stem = defaultdict(list)
+        for name in self.names:
+            self.by_stem[Path(name).stem].append(name)
+        self.referenced = set(referenced)
         self.used_dups = set()
 
     def resolve(self, stored: str):
@@ -109,6 +114,15 @@ class AttachmentResolver:
                 self.used_dups.add(cand)
                 return self.folder / cand, "dup_suffix"
             n += 1
+        candidates = self.by_stem.get(base, ())
+        if len(candidates)==1 and candidates[0] not in self.referenced:
+            candidate = Path(candidates[0])
+            if candidate.suffix.casefold()==suffix.casefold():
+                return self.folder / candidate, "extension_case"
+            image_types = {".png",".jpg",".jpeg",".heic",".heif",".webp"}
+            if (re.search(r"-[0-9a-fA-F]{16}$",base) and suffix.lower() in image_types
+                    and candidate.suffix.lower() in image_types):
+                return self.folder / candidate, "image_extension"
         return None, "missing"
 
 
@@ -128,7 +142,9 @@ def load(snapshot: Path):
 
 def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
     entries = load(snapshot)
-    resolver = AttachmentResolver(snapshot / "attachments")
+    referenced = {name for entry in entries for name in (entry.get("attachedFiles") or [])}
+    referenced.update(entry["imageFile"] for entry in entries if entry.get("imageFile"))
+    resolver = AttachmentResolver(snapshot / "attachments", referenced)
     snap = snapshot.name
     stats = {"entries": len(entries)}
 
@@ -150,7 +166,7 @@ def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
         orig = _orig_names(e)
         for pos, name in enumerate(stored):
             path, match = resolver.resolve(name)
-            mime = mimetypes.guess_type(name)[0]
+            mime = mimetypes.guess_type(path.name if match=="image_extension" else name)[0]
             origin = "user"
             if name.startswith("watermarked_img_"):
                 origin = "generated"

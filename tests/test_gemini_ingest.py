@@ -96,6 +96,21 @@ class IngestTest(unittest.TestCase):
         # imageFile duplicates attachedFiles[0] and must not create a second row
         self.assertEqual(self.q("SELECT COUNT(*) FROM attachment WHERE stored_name='IMG_1-abc.heic'")[0][0], 1)
 
+    def test_recovers_unique_export_identifiers_with_different_extensions(self):
+        folder = self.snap/"attachments"
+        stem = "fixture-0123456789abcdef"
+        actual = stem+".png"
+        (folder/actual).touch()
+        (folder/"record.pdf").touch()
+        (folder/"generic.jpg").touch()
+        resolver = gemini.AttachmentResolver(folder)
+        self.assertEqual(resolver.resolve(stem+".jpg"),(folder/actual,"image_extension"))
+        self.assertEqual(resolver.resolve("record.PDF"),(folder/"record.pdf","extension_case"))
+        self.assertEqual(resolver.resolve("generic.png"),(None,"missing"))
+        self.assertEqual(gemini.AttachmentResolver(folder,[actual]).resolve(stem+".jpg"),(None,"missing"))
+        (folder/(stem+".webp")).touch()
+        self.assertEqual(gemini.AttachmentResolver(folder).resolve(stem+".jpg"),(None,"missing"))
+
     def test_canvas_and_signal_linked_by_time(self):
         self.assertEqual([tuple(r) for r in self.q("SELECT conv_id, inferred FROM turn_conv tc JOIN turn t ON t.id=tc.turn_id WHERE t.kind='canvas'")], [("cccc", 1)])
         self.assertIn("canvas body", self.q("SELECT content FROM canvas")[0][0])
