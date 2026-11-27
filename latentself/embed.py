@@ -41,7 +41,7 @@ def turn_inputs(con):
 
 
 def image_rows(con):
-    return con.execute("""SELECT a.id,a.path,a.origin,t.prompt FROM attachment a JOIN turn t ON t.id=a.turn_id
+    return con.execute("""SELECT a.id,a.turn_id,a.path,a.origin,t.prompt FROM attachment a JOIN turn t ON t.id=a.turn_id
         WHERE a.path IS NOT NULL AND (a.mime LIKE 'image/%' OR a.origin='live_frame')
         ORDER BY t.ts,a.pos,a.id""")
 
@@ -94,11 +94,16 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
             if pending:
                 used += 1
                 yield from pending
-    for batch in batched(pending_texts(),32):
-        save(batch,backend.embed_texts)
-    if include_images and backend.multimodal:
+    if kinds:
+        for batch in batched(pending_texts(),32):
+            save(batch,backend.embed_texts)
+
+    def pending_images():
         used = 0
         for row in image_rows(con):
+            if turn_ids is not None and row["turn_id"] not in turn_ids:
+                stats["skipped"] += 1
+                continue
             if limit is not None and used >= limit:
                 stats["limited"] += 1
                 continue
@@ -112,8 +117,11 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
                 if work:
                     used += 1
                     stats["omitted_frames"] += omitted
-                    save([work],backend.embed_images)
+                    yield work
             except (OSError,ValueError,SubprocessError,BadZipFile) as exc:
                 stats["failed"] += 1
                 stats["failures"].append({"kind":"attachment","id":row["id"],"error":str(exc)})
+    if include_images and backend.multimodal:
+        for batch in batched(pending_images(),4):
+            save(batch,backend.embed_images)
     return stats

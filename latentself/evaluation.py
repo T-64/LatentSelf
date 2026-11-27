@@ -59,6 +59,10 @@ def prepare(con, ev, rows, backends, llm=None):
     if any(not idx.ids for idx in indices) or set(indices[0].ids)!=set(indices[1].ids):
         raise ValueError("index the same evaluation turns with both candidate models first")
     coverage = set(indices[0].ids)
+    from .embed import image_rows
+    photo_turns = {r["turn_id"] for r in image_rows(con)}
+    photo_indices = [VectorIndex(con,b,("turn","attachment")) if b.model == VL else idx
+                     for b,idx in zip(backends,indices,strict=True)] if any(r.get("photo") for r in rows) else []
     membership = defaultdict(set)
     for tid,cid in con.execute("SELECT turn_id,conv_id FROM turn_conv"):
         membership[tid].add(cid)
@@ -66,8 +70,11 @@ def prepare(con, ev, rows, backends, llm=None):
         query = row["q"]
         terms = list(dict.fromkeys([query,*expand(con,llm,query)]))
         sources = {"keyword":set().union(*(set(matching_turns(con,t,True)) for t in terms))}
-        for idx in indices:
-            scores,_ = idx.recall(query,coverage,None,300,evaluation_vector(ev,idx.backend,query))
+        eligible = coverage & photo_turns if row.get("photo") else coverage
+        if row.get("photo"):
+            sources["keyword"] &= photo_turns
+        for idx in (photo_indices if row.get("photo") else indices):
+            scores,_ = idx.recall(query,eligible,None,300,evaluation_vector(ev,idx.backend,query))
             sources[idx.backend.model] = set(scores)
         hits,routes = defaultdict(dict),defaultdict(set)
         for source,tids in sources.items():
@@ -192,7 +199,7 @@ def index_pool(con,ev,rows,backend,llm):
         for term in [row["q"], *expand(con,llm,row["q"])]:
             seed.update(matching_turns(con,term,True))
         if row.get("photo"):
-            seed.update(r["id"].rsplit(":",1)[0] for r in image_rows(con))
+            seed.update(r["turn_id"] for r in image_rows(con))
     if not seed:
         raise ValueError("empty comparison corpus")
-    return index(con,backend,turn_ids=seed,include_images=False,kinds=("turn",))
+    return index(con,backend,turn_ids=seed,include_images=any(r.get("photo") for r in rows),kinds=("turn",))

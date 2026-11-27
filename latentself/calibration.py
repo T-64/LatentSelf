@@ -72,6 +72,7 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
     models,sample_sets = {},{}
     for backend in backends:
         idx = VectorIndex(con,backend,("turn",))
+        image_idx = VectorIndex(con,backend,("turn","attachment")) if backend.model==VL and image_turns else idx
         samples,times = [],[]
         for n,row in enumerate(rows,1):
             start = time.monotonic()
@@ -83,7 +84,8 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
             eligible = image_turns if row.get("photo") else set(idx.ids)
             terms = [query,*expand(con,llm,query)]
             keywords = Counter(tid for t in dict.fromkeys(terms) for tid in matching_turns(con,t) if tid in eligible)
-            scores = idx.scores(query,eligible,evaluation_vector(ev,backend,query))
+            retrieval = image_idx if row.get("photo") else idx
+            scores = retrieval.scores(query,eligible,evaluation_vector(ev,backend,query))
             top = set(sorted(scores,key=lambda tid:(-scores[tid],tid))[:300])
             samples.append(dict(query=query,gold=gold,terms=terms,keywords=keywords,scores=scores,top=top))
             times.append(time.monotonic()-start)
