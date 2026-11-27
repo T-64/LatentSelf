@@ -15,7 +15,7 @@ class EvaluationTest(unittest.TestCase):
             ev = evaluation_db(Path(folder)/"labels.db")
             self.addCleanup(con.close)
             self.addCleanup(ev.close)
-            con.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2020','striped kite','snap')")
+            con.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2020',?,'snap')",("striped kite"*50,))
             con.execute("INSERT INTO conversation(id,source,n_turns) VALUES ('c','fixture',1)")
             con.execute("INSERT INTO turn_conv VALUES ('t','c',0)")
             con.execute("INSERT INTO fts_turn VALUES ('t','striped kite','','')")
@@ -24,7 +24,9 @@ class EvaluationTest(unittest.TestCase):
             rows = [{"q":"kite","photo":True}]
             llm = FakeLLM({"terms":[f"alias{i}" for i in range(8)]})
             for _ in range(2):
-                self.assertEqual(list(prepare_photo_review(con,ev,rows,llm))[0]["candidates"],1)
+                summary = list(prepare_photo_review(con,ev,rows,llm))[0]
+                self.assertEqual(summary["candidates"],1)
+                self.assertGreater(summary["judge_prompt_chars_omitted"],0)
             self.assertEqual(ev.execute("SELECT count(*) FROM pool").fetchone()[0],0)
             responses = iter(["y","1"])
             self.assertEqual(label_batch(con,ev,rows,ask=lambda _:next(responses),emit=lambda _:None),1)

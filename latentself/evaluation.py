@@ -78,8 +78,10 @@ def prepare(con, ev, rows, backends, llm=None):
         eligible = coverage & photo_turns if row.get("photo") else coverage
         if row.get("photo"):
             sources["keyword"] &= photo_turns
+        counts = {"judge_prompt_chars_omitted":0, "vector_turns_omitted":{}}
         for idx in (photo_indices if row.get("photo") else indices):
-            scores,_ = idx.recall(query,eligible,None,300,evaluation_vector(ev,idx.backend,query))
+            scores,omitted = idx.recall(query,eligible,None,300,evaluation_vector(ev,idx.backend,query))
+            counts["vector_turns_omitted"][idx.backend.model] = omitted
             sources[idx.backend.model] = set(scores)
         hits,routes = defaultdict(dict),defaultdict(set)
         for source,tids in sources.items():
@@ -87,7 +89,7 @@ def prepare(con, ev, rows, backends, llm=None):
                 for cid in membership[tid]:
                     hits[cid][tid] = (1,{"keyword"} if source=="keyword" else {"semantic"})
                     routes[cid].add(source)
-        excerpts = {cid:_previews(con,cid,turns,terms,True,{"judge_prompt_chars_omitted":0})[1]
+        excerpts = {cid:_previews(con,cid,turns,terms,True,counts)[1]
                     for cid,turns in hits.items()}
         judgments = _judge(con,llm,query,excerpts,{},Reranker())
         with ev:
@@ -98,7 +100,7 @@ def prepare(con, ev, rows, backends, llm=None):
                 ev.execute("INSERT INTO pool VALUES (?,?,?,?)",(query,cid,json.dumps(sorted(routes[cid])),excerpt))
                 if routes[cid] == {"keyword",TEXT,VL,"strict"} and not row.get("photo"):
                     ev.execute("INSERT OR IGNORE INTO label VALUES (?,?,1,NULL)",(query,cid))
-        yield {"candidates":len(excerpts),"covered_turns":len(coverage)}
+        yield {"candidates":len(excerpts),"covered_turns":len(coverage),**counts}
 
 
 def prepare_photo_review(con, ev, rows, llm=None):
@@ -112,15 +114,16 @@ def prepare_photo_review(con, ev, rows, llm=None):
         query = row["q"]
         terms = list(dict.fromkeys([query, *expand(con,llm,query)]))
         matches = {tid for term in terms for tid in matching_turns(con,term,True)} & photo_turns
+        counts = {"judge_prompt_chars_omitted":0}
         hits = defaultdict(dict)
         for tid,cid in con.execute("SELECT turn_id,conv_id FROM turn_conv"):
             if tid in matches:
                 hits[cid][tid] = (1,{"keyword"})
         with ev:
             for cid,turns in hits.items():
-                _,excerpt = _previews(con,cid,turns,terms,True,{"judge_prompt_chars_omitted":0})
+                _,excerpt = _previews(con,cid,turns,terms,True,counts)
                 ev.execute("INSERT OR IGNORE INTO photo_review VALUES (?,?,?)",(query,cid,excerpt))
-        yield {"query_number":number, "candidates":len(hits)}
+        yield {"query_number":number, "candidates":len(hits), **counts}
 
 
 def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
