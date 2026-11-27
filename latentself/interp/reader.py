@@ -170,7 +170,7 @@ def serve(reader,port,baseline=None):
                         result = [dict(id=uid,source=item["source"],hash=sha256(item["text"].encode()).hexdigest())
                                   for uid,item in public.items()]
                     else:
-                        result = reader.encode_layer(public[payload["id"]]["text"],payload["layer"])
+                        result = reader.encode_layer(public[payload["id"]]["text"],payload["layer"],formula=payload.get("formula"))
                 elif url.path=="/neighbors":
                     result = reader.neighbors(payload["layer"],payload["feature"])
                 else:

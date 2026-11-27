@@ -83,8 +83,9 @@ def import_activations(con,client,run_id):
         if con.execute("SELECT 1 FROM sae_unit WHERE run_id=? AND unit_id=? AND input_hash=?",(run_id,uid,digest)).fetchone():
             skipped += 1
             continue
-        data = post(client.url+"/baseline",dict(id=uid,layer=run["layer"]),timeout=600)["results"]
-        if any(data[k]!=run[k] for k in ("reader","sae_repo","precision")):
+        formula = json.loads(run["notes"])["formula"]
+        data = post(client.url+"/baseline",dict(id=uid,layer=run["layer"],formula=formula),timeout=600)["results"]
+        if data["formula"]!=formula or any(data[k]!=run[k] for k in ("reader","sae_repo","precision")):
             raise ValueError("baseline reader differs from selected run")
         store_unit(con,run_id,uid,digest,data)
         with con:

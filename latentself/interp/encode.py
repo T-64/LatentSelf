@@ -1,5 +1,6 @@
 """Checkpoint sparse results and normalize pooled activations by token length."""
 from math import isfinite,sqrt
+import json
 import os
 
 from ..backends import post
@@ -57,9 +58,10 @@ def encode(con,client,run_id,*,limit=None,emit=print):
             stats["limited"] += 1
             continue
         try:
-            rows = client.encode([text],[run["layer"]])
+            formula = json.loads(run["notes"])["formula"]
+            rows = client.encode([text],[run["layer"]],formula=formula)
             data = rows[0][str(run["layer"])]
-            if data["reader"]!=run["reader"] or data["sae_repo"]!=run["sae_repo"] or data["precision"]!=run["precision"]:
+            if data["formula"]!=formula or any(data[k]!=run[k] for k in ("reader","sae_repo","precision")):
                 raise ValueError("reader configuration differs from the selected run")
             store_unit(con,run_id,uid,digest,data)
             stats["success"] += 1
