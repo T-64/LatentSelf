@@ -249,6 +249,8 @@ def cmd_facts(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    from .mcp_server import main as mcp_main
+    sub.add_parser("mcp",help="serve local read-only tools over stdio").set_defaults(f=lambda _:mcp_main())
     s = sub.add_parser("titles",help="summarize new or changed conversations")
     s.add_argument("--limit",type=int)
     s.set_defaults(f=cmd_titles)

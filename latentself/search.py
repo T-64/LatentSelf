@@ -33,6 +33,8 @@ def cached(con, key):
 
 
 def remember(con, key, kind, value):
+    if con.execute("PRAGMA query_only").fetchone()[0]:
+        return
     with con:
         con.execute("""INSERT INTO search_cache VALUES (?,?,?,CURRENT_TIMESTAMP)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value,created_at=excluded.created_at""",
@@ -226,7 +228,7 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
     params = []
     for op,bound in ((">=",since),("<=",until)):
         if bound:
-            where.append(f"substr(ts,1,7){op}?")
+            where.append(f"substr(ts,1,{len(bound)}){op}?")
             params.append(bound)
     if images_only:
         where.append("""EXISTS (SELECT 1 FROM attachment a WHERE a.turn_id=t.id AND path IS NOT NULL
