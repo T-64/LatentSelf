@@ -301,6 +301,46 @@ def cmd_catalog(a):
         sys.exit(1)
 
 
+def cmd_rec(a):
+    from .analysis.report import render,selected
+    from .backends.embed import Embedder,VL
+    from .backends.llm import LocalLLM
+    from .exports import export_markdown
+    from .film_state import detect,feedback,review
+    from .interp.encode import Client
+    from .rec_eval import backtest
+    from .rec_output import recommend
+    from .recommend import representations
+    from .search import read_policy
+    con = _con()
+    if a.action=="detect-watched":
+        result = review(con,config.OUT,input if a.label else None) if a.review or a.label else detect(con,LocalLLM(),a.limit)
+    elif a.action=="feedback":
+        result = feedback(con,a.item,a.preference)
+    else:
+        model = read_policy(con).get("text_model",VL)
+        run = selected(con)
+        if a.action=="encode":
+            result = representations(con,Embedder(model),Client(),run,a.limit)
+        elif a.action=="backtest":
+            result = backtest(con,run,model)
+            result["path"] = str(export_markdown(con,config.OUT/"analysis"/"P4-BACKTEST.md",
+                                 "# 电影回测\n\n"+render(con,result)))
+        else:
+            result = recommend(con,LocalLLM(),run,model,config.OUT,a.n)
+            if not a.json:
+                if a.explain:
+                    print(Path(result["path"]).read_text())
+                else:
+                    for row in result["items"]:
+                        print(f'{row["rank"]}. {row["title"]}')
+                print(f'{result["returned"]}/{result["requested"]} · {result["path"]}')
+                return
+    print(json.dumps(result,ensure_ascii=False))
+    if result.get("failed") or result.get("interrupted"):
+        sys.exit(1)
+
+
 def cmd_topics(a):
     from .analysis.report import analyze
     from .backends.embed import VL
@@ -336,6 +376,21 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("rec",help="recommend films with traceable evidence and private feedback")
+    s.add_argument("--n",type=int,default=20)
+    s.add_argument("--json",action="store_true")
+    s.add_argument("--explain",action="store_true")
+    steps = s.add_subparsers(dest="action")
+    det = steps.add_parser("detect-watched")
+    det.add_argument("--review",action="store_true")
+    det.add_argument("--label",action="store_true")
+    det.add_argument("--limit",type=int)
+    fb = steps.add_parser("feedback")
+    fb.add_argument("item")
+    fb.add_argument("preference",choices=("like","dislike","watched","wanted","dismiss"))
+    steps.add_parser("backtest")
+    steps.add_parser("encode").add_argument("--limit",type=int)
+    s.set_defaults(f=cmd_rec)
     s = sub.add_parser("catalog",help="import films and enrich public metadata by identifier")
     s.add_argument("action",choices=("import","enrich","aliases"))
     s.add_argument("--limit",type=int)
