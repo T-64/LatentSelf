@@ -132,15 +132,21 @@ class Reader:
         return list(zip(ix.tolist(),v.tolist()))
 
 
-def serve(reader,port,baseline=None):
+def load_baseline(baseline):
     public = {}
-    if baseline:
-        with Path(baseline).open(encoding="utf-8") as source:
-            for line in source:
-                obj = json.loads(line)
-                if obj["id"] in public:
-                    raise ValueError("duplicate baseline ID in corpus; regenerate with distinct conversations")
-                public[obj["id"]] = obj
+    if not baseline:
+        return public,"public baseline sample is unavailable"
+    with Path(baseline).open(encoding="utf-8") as source:
+        for line in source:
+            obj = json.loads(line)
+            if obj["id"] in public:
+                return {},"duplicate baseline ID; regenerate with distinct conversations"
+            public[obj["id"]] = obj
+    return public,None if public else "public baseline sample is empty"
+
+
+def serve(reader,port,baseline=None):
+    public,baseline_error = load_baseline(baseline)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):
             pass
@@ -154,7 +160,8 @@ def serve(reader,port,baseline=None):
             self.wfile.write(body)
 
         def do_GET(self):
-            self.send_json(200 if self.path=="/health" else 404,{"reader":reader.reader})
+            self.send_json(200 if self.path=="/health" else 404,
+                           {"reader":reader.reader,"baseline_units":len(public),"baseline_error":baseline_error})
 
         def do_POST(self):
             url = urlparse(self.path)
@@ -169,8 +176,8 @@ def serve(reader,port,baseline=None):
                     result = [reader.tokenizer(text,return_offsets_mapping=True,add_special_tokens=True)["offset_mapping"]
                               for text in payload["texts"]]
                 elif url.path=="/baseline":
-                    if not public:
-                        return self.send_json(409,{"error":"public baseline sample is unavailable"})
+                    if baseline_error:
+                        return self.send_json(409,{"error":baseline_error})
                     if payload.get("list"):
                         result = [dict(id=uid,source=item["source"],hash=sha256(item["text"].encode()).hexdigest())
                                   for uid,item in public.items()]
