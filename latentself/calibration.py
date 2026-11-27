@@ -1,5 +1,6 @@
 """Fit retrieval thresholds and compare strict strategies on the private owner labels."""
 from collections import Counter
+from hashlib import sha256
 from itertools import batched
 import json
 from statistics import mean
@@ -62,10 +63,39 @@ def cascade_bounds(observations):
     return low,high
 
 
-def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
+class MeasuredReranker:
+    """Replay exact scored batches with their original end-to-end serving cost."""
+
+    def __init__(self, ev, backend):
+        self.ev = ev
+        self.backend = backend
+        self.replayed_seconds = 0.0
+        self.serving_seconds = 0.0
+
+    def score(self, query, documents):
+        body = json.dumps([query, documents], ensure_ascii=False, separators=(",", ":")).encode()
+        key = (self.backend.model, sha256(body).hexdigest())
+        row = self.ev.execute("SELECT scores,seconds FROM rerank_batch WHERE model=? AND digest=?", key).fetchone()
+        if row:
+            scores, seconds = json.loads(row[0]), row[1]
+            self.replayed_seconds += seconds
+        else:
+            start = time.monotonic()
+            scores = self.backend.score(query, documents)
+            seconds = time.monotonic() - start
+            if len(scores) != len(documents) or not np.isfinite(scores).all():
+                raise ValueError("reranker returned incomplete or non-finite scores")
+            with self.ev:
+                self.ev.execute("INSERT OR IGNORE INTO rerank_batch VALUES (?,?,?,?)",
+                                (*key, json.dumps(scores), seconds))
+        self.serving_seconds += seconds
+        return scores
+
+
+def calibrate(con,ev,rows,backends=None,llm=None,reranker=None,*,score_only=False):
     backends = backends or default_backends()
     llm = llm or LocalLLM()
-    reranker = reranker or Reranker()
+    reranker = MeasuredReranker(ev, reranker or Reranker())
     membership = [tuple(r) for r in con.execute("SELECT conv_id,turn_id FROM turn_conv")]
     image_turns = {r[0] for r in con.execute("""SELECT turn_id FROM attachment WHERE path IS NOT NULL
                    AND (mime LIKE 'image/%' OR origin='live_frame')""")}
@@ -107,6 +137,9 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
             scores = reranker.score(s["query"],[evidence[cid] for cid in chunk])
             observations.extend((score,s["gold"][cid]) for score,cid in zip(scores,chunk,strict=True) if cid in s["gold"])
         work.append((s,evidence))
+    if score_only:
+        return {"queries":len(work), "candidates":sum(len(evidence) for _,evidence in work),
+                "rerank_serving_seconds":reranker.serving_seconds}
     low,high = cascade_bounds(observations)
     modes = {}
     for strategy in ("llm","cascade"):
@@ -115,10 +148,14 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
             options.update(rerank_low=low,rerank_high=high)
         results = []
         for s,evidence in work:
+            replay_before = reranker.replayed_seconds
             start = time.monotonic()
             verdicts = _judge(con,llm,s["query"],evidence,options,reranker,use_cache=False)
             result = quality({cid for cid,v in verdicts.items() if v["relevant"]},s["gold"])
-            results.append({**result,"seconds":time.monotonic()-start})
+            local_seconds = time.monotonic()-start
+            replay_seconds = reranker.replayed_seconds-replay_before
+            results.append({**result,"seconds":local_seconds+replay_seconds,
+                            "replayed_rerank_seconds":replay_seconds})
         modes[strategy] = {"queries":results,"policy":options}
     def strategy_key(name):
         reports = modes[name]["queries"]

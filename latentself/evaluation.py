@@ -35,6 +35,9 @@ def evaluation_db(path):
             q TEXT, cid TEXT, relevant INTEGER NOT NULL, photo TEXT, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS query_vector (
             model TEXT, q TEXT, instruction TEXT, vec BLOB NOT NULL, PRIMARY KEY(model,q,instruction));
+        CREATE TABLE IF NOT EXISTS rerank_batch (
+            model TEXT, digest TEXT, scores TEXT NOT NULL, seconds REAL NOT NULL,
+            PRIMARY KEY(model,digest));
     """)
     return con
 

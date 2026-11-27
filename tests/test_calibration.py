@@ -44,6 +44,8 @@ class CalibrationTest(unittest.TestCase):
                 return {"results":[{"conv_id":r["conv_id"],"relevant":r["conv_id"]=="aa","reason":"fixture"} for r in batch]}
             llm = FakeLLM(reply)
             class Reranker:
+                model = "fixture-reranker"
+
                 def score(self,query,docs):
                     return [1.0 if "fixture" in doc else 0.0 for doc in docs]
             rows = [{"q":"fixture"}]
@@ -54,7 +56,16 @@ class CalibrationTest(unittest.TestCase):
                 calibrate(con,ev,rows,backends,llm,Reranker())
             ev.execute("INSERT INTO label VALUES ('fixture','bb',0,NULL)")
             calls_before = [list(b.calls) for b in backends]
-            result = calibrate(con,ev,rows,backends,llm,Reranker())
+            scorer = Reranker()
+            prepared = calibrate(con,ev,rows,backends,llm,scorer,score_only=True)
+            self.assertEqual(prepared["candidates"],2)
+            self.assertEqual(read_policy(con),{})
+            def offline(*args):
+                self.fail("the reranker should be unloaded during LLM calibration")
+            scorer.score = offline
+            result = calibrate(con,ev,rows,backends,llm,scorer)
+            replay = result["strict"]["cascade"]["queries"][0]["replayed_rerank_seconds"]
+            self.assertAlmostEqual(replay,prepared["rerank_serving_seconds"])
             self.assertEqual([b.calls for b in backends],calls_before)
             self.assertEqual(read_policy(con),result["selected"])
             self.assertEqual(result["selected"]["text_model"],VL)

@@ -186,9 +186,9 @@ def cmd_eval(a):
             print(n,json.dumps(out))
     elif a.label:
         print("已标注",ev.label_batch(con,labels,rows))
-    elif a.calibrate:
+    elif a.calibrate or a.score_reranker:
         from .calibration import calibrate
-        print(json.dumps(calibrate(con,labels,rows),ensure_ascii=False,indent=2))
+        print(json.dumps(calibrate(con,labels,rows,score_only=a.score_reranker),ensure_ascii=False,indent=2))
     elif a.extend_pool:
         for number,count in ev.extend_pool(con,labels,rows):
             print(f"query {number}: {count} new candidates")
@@ -218,6 +218,7 @@ def main(argv=None):
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--label",action="store_true")
     group.add_argument("--calibrate",action="store_true")
+    group.add_argument("--score-reranker",action="store_true",help="save measured reranker batches before loading the LLM")
     group.add_argument("--extend-pool",action="store_true")
     s.set_defaults(f=cmd_eval)
     s = sub.add_parser("embed", help="index new or changed model inputs")

@@ -58,6 +58,7 @@ lself eval --index-pool Qwen/Qwen3-VL-Embedding-8B
 lself eval --index-pool Qwen/Qwen3-Embedding-8B
 lself eval --prepare
 lself eval --label        # 每次最多 30 项，照片查询可标记具体文件
+lself eval --score-reranker  # 单卡可先只加载 reranker，保存实测分数和耗时
 lself eval --calibrate    # 输出匿名汇总，选定策略存入数据库
 lself embed
 lself eval --extend-pool  # 将全库检索新增的候选加入同一份标注清单
@@ -66,4 +67,4 @@ lself eval
 scripts/smoke_p1.sh
 ```
 
-校准比较两种模型的文本召回率，再比较逐个判断和分级判断的质量与耗时。最终评测使用全量索引，逐查询列出漏报、误报、待标注项和照片前五命中。其明细仅保存在本地。
+校准比较两种模型的文本召回率，再比较逐个判断和分级判断的质量与耗时。分开加载 reranker 和 LLM 时，分级判断的耗时包含同一批候选先前实测的 reranker 请求时间，报告也单列这部分秒数。最终评测使用全量索引，逐查询列出漏报、误报、待标注项和照片前五命中。其明细仅保存在本地。
