@@ -105,3 +105,30 @@ lself write "一段经历" --continue
 ```
 
 可查询对话、日期时间线、摘要、核查过的事实和附件元数据。结果超过上限时会带有 `truncated` 和省略计数。
+
+### 可解释特征与话题
+
+服务器端运行 `bash scripts/server/fetch-readers.sh` 缓存固定版本的 9B、27B 读者和实验层。可从 Mac 执行 `ssh server 'bash -s' < scripts/server/fetch-readers.sh`。读者监听服务器回环端口 8003；同端口的文本向量服务须先停止。把 `LATENTSELF_READER_URL` 指向 SSH 转发的本机地址。
+
+```bash
+lself units --sample-paste 100
+lself units --sample-paste 100 --label
+scripts/server/up.sh reader9
+lself interp experiment --model 9b --precision bf16
+scripts/server/down.sh reader9
+# 另两组分别运行 reader27-offload / bf16-offload 和 reader27-int8 / int8
+lself interp experiment --select
+lself interp encode
+lself interp baseline
+lself interp label
+lself topics build
+lself topics name
+lself topics report
+lself analyze all
+lself features build-dashboard
+lself search --feature 123 --json
+```
+
+选型要求三个运行条件各有五层、同一组 2,000 个单元、每层 50 个带独立留出集的检测分数。`--count` 可用于小样本连通性检查。代码将这类运行排除在正式选型之外。实验指标和校验清单写在本机。公开基准采用 AllenAI 的 WildChat-1M 清理版（ODC-BY）。在服务器用 `python -m latentself.interp.baseline ~/.cache/latentself/wildchat-zh.jsonl` 生成固定种子的 15,000 条样本后，再启动读者。服务器可复用此样本，返回给 Mac 的是编号、哈希与编码结果。
+
+历史时区用 `LATENTSELF_TZ_PERIODS` 指定，例如 `[{"from":"2024-01-01","zone":"Europe/Berlin"}]`。未覆盖时段按 UTC 统计。`LATENTSELF_LIFE_DATE` 可设置人生节点对照日期。本机看板在输出目录的 `features/index.html`，可按名称筛选、查看原文高亮、打开出处。
