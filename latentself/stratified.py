@@ -27,6 +27,7 @@ def open_review(path, legacy=None):
         CREATE TABLE IF NOT EXISTS target(q PRIMARY KEY,path);
         CREATE TABLE IF NOT EXISTS prediction(q,config,rank INTEGER,cid,PRIMARY KEY(q,config,cid));
         CREATE TABLE IF NOT EXISTS strategy(config PRIMARY KEY,model,threshold REAL);
+        CREATE TABLE IF NOT EXISTS frame_stats(q PRIMARY KEY,details);
         CREATE TABLE IF NOT EXISTS review_meta(k PRIMARY KEY,v);
     """)
     if legacy and Path(legacy).is_file() and not db.execute("SELECT 1 FROM review_meta WHERE k='legacy'").fetchone():
@@ -93,6 +94,7 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
     by_model = {b.model:b for b in backends}
     indices = {m:VectorIndex(con,by_model[m],("turn",)) for m in (VL,TEXT)}
     images = VectorIndex(con,by_model[VL],("attachment",))
+    multimodal = VectorIndex(con,by_model[VL],("turn","attachment"))
     if not indices[VL].ids or set(indices[VL].ids)!=set(indices[TEXT].ids):
         raise ValueError("paired text candidates must cover the same turns")
     if con.execute("""SELECT 1 FROM embedding a JOIN embedding b USING(item_kind,item_id)
@@ -114,7 +116,8 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
         vectors = {m:evaluation_vector(db,b,q) for m,b in by_model.items()}
         scores = {m:idx.scores(q,eligible,vectors[m]) for m,idx in indices.items()}
         visual = images.scores(q,eligible,vectors[VL])
-        data.append((q,terms,loose,keywords,scores,visual))
+        combined = multimodal.scores(q,eligible,vectors[VL])
+        data.append((q,terms,loose,keywords,scores,visual,combined))
     # Freeze outputs for every threshold considered during model selection, before drawing.
     from itertools import chain
     thresholds = {}
@@ -124,7 +127,7 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
         if "threshold" in policy:
             grid.add(float(policy["threshold"]))
         thresholds[m] = [None,*sorted(grid)]
-    for number,(q,terms,loose,keywords,scores,visual) in enumerate(data,1):
+    for number,(q,terms,loose,keywords,scores,visual,combined) in enumerate(data,1):
         routes, hits = defaultdict(set),defaultdict(dict)
         def record(tids,route):
             for cid,tid in membership:
@@ -138,13 +141,11 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
         record(visual_top,VL)
         predictions = []
         configs = []
+        discarded = {}
         for model,values in scores.items():
             top = set(ordered(values)[:300])
             record(top,model)
-            combined = dict(values)
-            for tid,v in visual.items():
-                combined[tid] = max(v,combined.get(tid,-1))
-            combined_top = set(ordered(combined)[:300])
+            combined_top = set(ordered(combined)[:300]) if model==VL else set()
             if model==VL:
                 record(combined_top,VL)
             for n,tau in enumerate(thresholds[model]):
@@ -156,6 +157,7 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
                     pure_ranked,pure_groups = rank_conversations(keywords,keep,membership)
                     pure_key = f"text-{n}"
                     configs.append((pure_key,model,tau))
+                    discarded[pure_key] = max(0,len(pure_ranked)-200)
                     for rank,(_,cid) in enumerate(pure_ranked[:200],1):
                         predictions.append((q,pure_key,rank,cid))
                         if cid not in hits:
@@ -167,6 +169,7 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
                             keep[t] = max(v,keep.get(t,-1))
                 ranked,groups = rank_conversations(keywords,keep,membership)
                 configs.append((key,model,tau))
+                discarded[key] = max(0,len(ranked)-200)
                 for rank,(_,cid) in enumerate(ranked[:200],1):
                     predictions.append((q,key,rank,cid))
                     # Alternate thresholds of one model are not independent retrieval routes.
@@ -188,7 +191,8 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
             if cid not in routes:
                 routes[cid].add("prior-owner")
                 hits[cid].update({t:(1,{"semantic"}) for c,t in membership if c==cid})
-        excerpts = {cid:_previews(con,cid,group,terms,True,{"judge_prompt_chars_omitted":0})[1]
+        review_stats = {"judge_prompt_chars_omitted":0}
+        excerpts = {cid:_previews(con,cid,group,terms,True,review_stats)[1]
                     for cid,group in hits.items()}
         singles = {cid:excerpt for cid,excerpt in excerpts.items() if len(routes[cid])==1}
         from .search import _key,cached
@@ -196,6 +200,10 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
         progress(dict(query=number,pool=len(routes),singleton=len(singles),new_judgments=cold))
         verdicts = _judge(con,llm,q,singles,{},Reranker())
         with db:
+            review_stats.update(config_candidates_omitted=discarded,keyword_turns=len(loose),
+                                vector_top300_omitted={m:max(0,len(v)-300) for m,v in scores.items()},
+                                visual_top300_omitted=max(0,len(visual)-300))
+            db.execute("INSERT OR REPLACE INTO frame_stats VALUES(?,?)",(q,json.dumps(review_stats)))
             db.execute("DELETE FROM frame WHERE q=?",(q,))
             db.execute("DELETE FROM prediction WHERE q=?",(q,))
             db.executemany("INSERT OR REPLACE INTO strategy VALUES(?,?,?)",configs)
@@ -231,7 +239,7 @@ def status(db,rows):
         counts.extend(dict(source=s,tier=t,pool=0,sample=0,labeled=0,skipped=0,pending=0)
                       for s in ("gemini","aistudio") for t in QUOTAS if (s,t) not in present)
         counts.sort(key=lambda r:(r["tier"],r["source"]))
-        result.append(dict(number=n,strata=counts,photo_target=(bool(db.execute("SELECT 1 FROM target WHERE q=?",(q,)).fetchone())
+        result.append(dict(number=n,strata=counts,not_sampled=sum(x["pool"]-x["sample"] for x in counts),photo_target=(bool(db.execute("SELECT 1 FROM target WHERE q=?",(q,)).fetchone())
                                                                if row.get("photo") else None)))
     return dict(queries=result,totals={k:sum(s[k] for r in result for s in r["strata"])
                 for k in ("pool","sample","labeled","skipped","pending")})
