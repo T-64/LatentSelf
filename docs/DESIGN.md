@@ -4,7 +4,7 @@
 
 ## 0. 一句话
 
-把我所有 AI 对话（先做 Gemini，之后加入 AI Studio 和 Claude）变成一个**本地**的个人数据底座，在上面支撑四件事：查询、画像与推荐、AI 写作复盘、可视化。
+把我所有 AI 对话（已接入 Gemini Takeout 和 Google AI Studio，之后加入 Claude）变成一个**本地**的个人数据底座，在上面支撑四件事：查询、画像与推荐、AI 写作复盘、可视化。
 
 这四件事共用一个核心：**同一个 embedding 空间里的潜在特征（latent features）**。查询是在这个空间里找邻居，画像是在这个空间里找我反复出现的方向，推荐是把电影或书投进同一个空间、看它们点亮了哪些我的方向，可视化就是把这个空间画出来。
 
@@ -23,7 +23,9 @@
 ```
 ~/data/raw/gemini/<YYYY-MM-DD>/MyActivity.json
 ~/data/raw/gemini/<YYYY-MM-DD>/attachments/        # 上传的照片、语音、PDF、生成的图片
-~/data/raw/aistudio/ ...  ~/data/raw/claude/ ...   # 之后接入
+~/data/raw/aistudio/         # 可复用的已有 Drive 文件
+~/data/processed/latentself/exports/   # AI Studio 快照、原件与附件清单
+~/data/raw/claude/           # 之后接入
 ```
 
 ### 2.2 Gemini 字段 → 统一模型
@@ -162,7 +164,8 @@ latentself/
 ├── latentself/
 │   ├── config.py          # 路径、模型端点
 │   ├── db.py              # schema + 迁移
-│   ├── ingest/gemini.py   # Takeout → 统一模型（之后加 aistudio.py、claude.py）
+│   ├── ingest/gemini.py   # Gemini Takeout → 统一模型
+│   ├── ingest/aistudio.py # AI Studio 对话快照 → 统一模型
 │   ├── enrich/            # 图片描述、语音转写、对话标题（调用服务器）
 │   ├── embed.py           # 增量 embedding
 │   ├── search.py          # 召回 + 聚合 + 判断
@@ -191,7 +194,8 @@ latentself/
 | P3 | SAE 特征、Leiden 话题、画像 | 特征浏览器（CLI 或 HTML）：每个特征显示最强样本和时间曲线 |
 | P4 | 电影推荐和反馈 | 给出 20 部推荐，每部都附带证据；排除已看过的 |
 | P5 | 可视化 | 待定 |
-| — | 接入 AI Studio 和 Claude 导出 | 同一套 schema，只增加 ingest |
+| 已接入 | Google AI Studio 导出、增量导入和全文检索 | 以 Drive 文件 ID 区分同名对话，保留原始出处和附件。没有消息时间的轮次可检索，日期统计跳过这些轮次。 |
+| — | 接入 Claude 导出 | 沿用同一套 schema |
 
 ## 7. 已定（2026-11-26）
 
