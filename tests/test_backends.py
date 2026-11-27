@@ -1,4 +1,6 @@
 import base64
+from http.client import IncompleteRead
+import io
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +12,18 @@ from latentself.backends.llm import LocalLLM
 
 
 class BackendTest(unittest.TestCase):
+    @patch("latentself.backends.sleep")
+    @patch("latentself.backends.build_opener")
+    def test_partial_response_retries_once_without_returning_partial_data(self, build, sleep):
+        opener = build.return_value
+        opener.open.side_effect = [IncompleteRead(b"partial"),io.BytesIO(b'{"complete":true}')]
+        self.assertEqual(post("http://127.0.0.1:8001/test",{}),{"complete":True})
+        self.assertEqual(opener.open.call_count,2)
+        sleep.assert_called_once()
+        opener.open.side_effect = [IncompleteRead(b"partial"),IncompleteRead(b"again")]
+        with self.assertRaisesRegex(OSError,"complete response"):
+            post("http://127.0.0.1:8001/test",{})
+
     @patch("latentself.backends.llm.post")
     def test_truncated_response_is_never_treated_as_a_verdict(self, request):
         request.return_value = {"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}
