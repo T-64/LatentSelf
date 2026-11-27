@@ -1,9 +1,20 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from latentself.interp.baseline import sample
+from latentself.interp.reader import load_baseline
 
 
 class BaselineTest(unittest.TestCase):
+    def test_reject_duplicate_corpus_independently_of_the_reader(self):
+        with TemporaryDirectory() as root:
+            sample_file = Path(root)/"units.jsonl"
+            sample_file.write_text('{"id":"a"}\n{"id":"a"}\n')
+            rows,error = load_baseline(sample_file)
+            self.assertFalse(rows)
+            self.assertIn("duplicate",error)
+
     def test_only_chinese_first_user_prompt_and_seeded_sample(self):
         rows = [dict(conversation_hash=str(i),conversation=[dict(role="user",language="Chinese",content=f"测试{i}"),
                     dict(role="assistant",language="Chinese",content="unused")]) for i in range(30)]
