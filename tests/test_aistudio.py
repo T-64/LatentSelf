@@ -1,0 +1,45 @@
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+from latentself.db import connect
+from latentself.ingest.aistudio import ingest
+
+
+class StudioIngest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.db = connect(self.root / "test.db")
+        self.addCleanup(self.db.close)
+        (self.root / "objects").mkdir()
+        data = b'{"chunkedPrompt":{}}'
+        digest = hashlib.sha256(data).hexdigest()
+        (self.root / "objects" / digest).write_bytes(data)
+        self.row = dict(source="aistudio", drive_id="synthetic-id", title="Demo",
+                        url="https://aistudio.google.com/app/prompts/synthetic-id", source_sha256=digest,
+                        drive_created="2025-01-01", drive_modified="2025-01-02", messages=[
+                            dict(index=0, role="user", time=None, text="sample phrase", attachments=[]),
+                            dict(index=2, role="model", time=None, text="sample answer", attachments=[])])
+        (self.root / "media.json").write_text("{}")
+
+    def write(self, rows):
+        (self.root / "conversations.jsonl").write_text("".join(json.dumps(r)+"\n" for r in rows))
+
+    def test_same_title_distinct_sources_and_repeat(self):
+        self.write([self.row, dict(self.row,drive_id="another-id")])
+        self.assertEqual(ingest(self.db,self.root)["imported"],2)
+        changes=self.db.total_changes
+        self.assertEqual(ingest(self.db,self.root),{"skipped":2})
+        self.assertEqual(changes,self.db.total_changes)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM fts_turn WHERE fts_turn MATCH 'sample'").fetchone()[0],2)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM turn WHERE ts=''").fetchone()[0],2)
+
+    def test_invalid_record_rolls_back_batch(self):
+        self.write([self.row,dict(self.row,drive_id="../invalid")])
+        with self.assertRaises(ValueError):
+            ingest(self.db,self.root)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM conversation").fetchone()[0],0)

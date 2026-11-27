@@ -25,6 +25,12 @@ def _con():
 
 
 def cmd_ingest(a):
+    if a.source == "aistudio":
+        from .ingest import aistudio
+        if not a.snapshot:
+            raise ValueError("AI Studio import needs --snapshot DIR")
+        print(json.dumps(aistudio.ingest(_con(), a.snapshot), ensure_ascii=False, indent=2))
+        return
     from .ingest import gemini
     snap = Path(a.snapshot).expanduser() if a.snapshot else config.latest_gemini_snapshot()
     stats = gemini.ingest(_con(), snap)
@@ -492,7 +498,9 @@ def main(argv=None):
     s.add_argument("--limit", type=int)
     s.add_argument("--retry-errors", action="store_true")
     s.set_defaults(f=cmd_enrich)
-    s = sub.add_parser("ingest"); s.add_argument("--snapshot"); s.set_defaults(f=cmd_ingest)
+    s = sub.add_parser("ingest"); s.add_argument("--snapshot")
+    s.add_argument("--source", choices=("gemini","aistudio"), default="gemini")
+    s.set_defaults(f=cmd_ingest)
     s = sub.add_parser("stats"); s.set_defaults(f=cmd_stats)
     s = sub.add_parser("grep"); s.add_argument("text"); s.add_argument("--answers", action="store_true", help="also search Gemini's answers")
     s.add_argument("--images", action="store_true", help="only turns with attachments"); s.add_argument("-n", type=int, default=0, help="show only the latest N")
