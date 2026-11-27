@@ -193,42 +193,47 @@ def cmd_search(a):
 
 
 def cmd_eval(a):
-    from . import evaluation as ev
+    from contextlib import closing
+    from . import evaluation as ev, stratified as review
     from .backends.llm import LocalLLM
     rows = ev.read_queries(a.queries)
+    path = a.review_db or a.queries.parent / "stratified.sqlite3"
     if a.status:
-        print(json.dumps(ev.review_status(a.queries.parent/"labels.sqlite3",rows),ensure_ascii=False,indent=2))
+        import sqlite3
+        if not path.is_file():
+            print(json.dumps({"available":False}))
+            return
+        with closing(sqlite3.connect(path.absolute().as_uri()+"?mode=ro",uri=True)) as db:
+            print(json.dumps(review.status(db,rows),ensure_ascii=False,indent=2))
         return
-    con = _con()
-    labels = ev.evaluation_db(a.queries.parent / "labels.sqlite3")
-    if a.index_pool:
-        backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
-        out = ev.index_pool(con,labels,rows,backend,LocalLLM())
-        print(json.dumps(out,ensure_ascii=False))
-        if out["failed"] or out.get("interrupted"):
-            sys.exit(1)
-    elif a.prepare_photo_review:
-        for out in ev.prepare_photo_review(con,labels,rows):
-            print(json.dumps(out))
-    elif a.prepare:
-        for n,out in enumerate(ev.prepare(con,labels,rows,ev.default_backends()),1):
-            print(n,json.dumps(out))
-    elif a.label:
-        print("已标注",ev.label_batch(con,labels,rows))
-    elif a.target_photo:
-        number,path = a.target_photo
-        print("已确认目标照片所属对话",ev.set_target_photo(con,labels,rows,int(number),path))
-    elif a.calibrate or a.score_reranker:
-        from .calibration import calibrate
-        print(json.dumps(calibrate(con,labels,rows,score_only=a.score_reranker),ensure_ascii=False,indent=2))
-    elif a.extend_pool:
-        for number,count in ev.extend_pool(con,labels,rows):
-            print(f"query {number}: {count} new candidates")
-    else:
-        report = list(ev.evaluate(con,labels,rows))
-        print(json.dumps(report,ensure_ascii=False,indent=2))
-        if not all(r["accepted"] for r in report):
-            sys.exit(1)
+    with closing(connect_core(config.DB_PATH)) as con, closing(review.open_review(path,a.queries.parent/"labels.sqlite3")) as db:
+        if a.index_pool:
+            backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
+            out = ev.index_pool(con,db,rows,backend,LocalLLM())
+            print(json.dumps(out,ensure_ascii=False))
+            if out["failed"] or out.get("interrupted"):
+                sys.exit(1)
+        elif a.prepare or a.extend_pool:
+            if a.carry_review:
+                review.carry_decisions(db,a.carry_review)
+            review.candidate_frame(con,db,rows,ev.default_backends(),progress=lambda r:print(json.dumps(r),flush=True))
+            print(json.dumps(review.status(db,rows)["totals"]))
+        elif a.label:
+            print("已保存",review.label_batch(db,rows,a.batch))
+        elif a.target_photo:
+            number,file = a.target_photo
+            review.set_photo(con,db,rows,int(number),file)
+            print("已保存目标照片")
+        elif a.photos or a.prepare_photo_review:
+            from .photo_review import serve_photos
+            serve_photos(con,db,rows)
+        elif a.checklist:
+            from .photo_review import checklist
+            checklist(db,rows,a.checklist)
+            print(a.checklist)
+        else:
+            from .stratified_metrics import report
+            print(json.dumps(report(con,db,rows,score_only=a.score_reranker,persist=a.calibrate),ensure_ascii=False,indent=2))
 
 
 def cmd_titles(a):
@@ -481,10 +486,15 @@ def main(argv=None):
     s.add_argument("--queries",type=Path,default=config.DATA/"processed/latentself/eval/queries.yaml")
     group = s.add_mutually_exclusive_group()
     group.add_argument("--index-pool",choices=[VL,TEXT])
+    s.add_argument("--review-db",type=Path,help="private stratified review database")
+    s.add_argument("--carry-review",type=Path,help="retain owner decisions when preparing a fresh frame")
+    s.add_argument("--batch",type=int,default=30,help="maximum decisions in this session")
+    group.add_argument("--photos",action="store_true",help="pick target images in the local browser")
+    group.add_argument("--checklist",type=Path,help="write a private read-only HTML checklist to a new file")
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--prepare-photo-review",action="store_true",help="queue guaranteed photo keyword matches for early review")
     group.add_argument("--label",action="store_true")
-    group.add_argument("--status",action="store_true",help="show current consensus, owner decisions and remaining review counts")
+    group.add_argument("--status",action="store_true",help="show per-source strata, owner decisions and pending counts")
     group.add_argument("--target-photo",nargs=2,metavar=("QUERY_NUMBER","FILE"),
                        help="identify a known target photo by private query number and exact local path")
     group.add_argument("--calibrate",action="store_true")

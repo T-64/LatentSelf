@@ -65,29 +65,19 @@ scripts/server/down.sh embed
 
 ### 模型比较与验收
 
-私有查询文件默认为 `$LATENTSELF_DATA/processed/latentself/eval/queries.yaml`，顶层 `queries` 列表的每项使用 `q`，照片项加 `photo: true`。标签保存在同目录的 `labels.sqlite3`。以下步骤先构建小范围比较语料（扩展关键词命中和照片轮次），模型选择之后再建立全量索引。
+私有查询和标注存放于 `$LATENTSELF_DATA/processed/latentself/eval/`。默认 fast 只用原词和缓存中的扩展词。`--expand` 允许冷查询主动请求扩展，`--terms` 使用指定词；strict 会并行请求扩展和查询向量。
 
 ```bash
-lself eval --index-pool Qwen/Qwen3-VL-Embedding-8B
-lself eval --index-pool Qwen/Qwen3-Embedding-8B
-lself eval --prepare
-lself eval --label        # 每次最多 30 项，照片查询可标记具体文件
-lself eval --score-reranker  # 单卡可先只加载 reranker，保存实测分数和耗时
-lself eval --calibrate    # 输出匿名汇总，选定策略存入数据库
-lself embed
-lself eval --extend-pool  # 将全库检索新增的候选加入同一份标注清单
-lself eval --label
-lself eval
-scripts/smoke_p1.sh
+lself eval --prepare                   # 在对齐的候选索引上冻结配置输出、候选池和人工样本
+lself eval --checklist review.html     # 独立的只读清单，须使用新文件名
+lself eval --status
+lself eval --label                     # y 是、n 否、s 跳过、q 暂停，每次默认 30 条
+lself eval --photos                    # 本机照片页可选择目标文件
 ```
 
-两个候选模型建索引期间也可以开始核对照片。运行 `lself eval --prepare-photo-review` 后，`lself eval --label` 会显示照片查询已经命中的关键词候选。先看列出的文件，输入 `v 1` 可在 Mac 上预览第一个附件。关闭预览后用 `y` 或 `n` 标注，相关时可指定目标照片编号。这些候选一定进入最终并集，标注会沿用。完整模型比较由 `lself eval --prepare` 生成。
+两个来源的候选按 S1/S2/S3 分别抽 4/6/6 条。名额按层内来源比例分配，有 AI Studio 候选时为它至少保留一个名额。已有本人标签计入样本。指定目标照片与相关性标注分别保存，也可用 `lself eval --target-photo 查询序号 "/完整/本机路径"` 登记。抽样完成后等待本人标注。
 
-校准比较两种模型的文本召回率，再比较逐个判断和分级判断的质量与耗时。分开加载 reranker 和 LLM 时，分级判断的耗时包含同一批候选先前实测的 reranker 请求时间，报告也单列这部分秒数。最终评测使用全量索引，逐查询列出漏报、误报、待标注项和照片前五命中。其明细仅保存在本地。
-
-已知道目标文件时，可直接运行 `lself eval --target-photo 查询序号 "/完整/本地/照片路径"`。查询序号按私有 YAML 中的顺序从 1 开始。即使检索遗漏了该文件，其所属对话也会计入召回率的分母。指定目标后，`--label` 只需继续核对分歧项。
-
-运行 `lself eval --status` 可以在评测期间查看当前候选数、自动共识数、本人已标和待标数，以及照片目标的确认状态。该命令只读本机标注库。
+标注完成后，`lself eval --score-reranker` 可以单独保存重排评分，`--calibrate` 按文本查询合并后的加权指标选型。`lself eval` 输出六个子层的统计、按查询及来源的结果、照片前五、样本误报漏报和 1,000 次分层 bootstrap 区间。新索引或配置改变输出时，使用新的 `--review-db` 和 `--carry-review 原标注库` 重新准备。明细只留在本机。
 
 ### 标题、摘要与可追溯写作
 
