@@ -41,6 +41,17 @@ class SearchTest(unittest.TestCase):
         self.assertEqual([r["conv_id"] for r in self.run_search(since="2020-02",until="2020-02")["results"]],["ab"])
         self.assertEqual(self.run_search(images_only=True)["results"],[])
 
+    def test_repeated_query_uses_exact_cached_vector_across_index_reloads(self):
+        before = self.run_search()
+        self.idx = VectorIndex(self.con,self.embed,("turn",))
+        def offline(*args,**kwargs):
+            raise ConnectionError("offline")
+        self.embed.embed_texts = offline
+        after = self.run_search()
+        self.assertEqual(before,after)
+        self.assertEqual(self.con.execute("SELECT count(*) FROM search_cache WHERE kind='query_vector'").fetchone()[0],1)
+        self.assertTrue(any("仅关键词" in s for s in self.run_search("uncached")["notices"]))
+
     def test_judgments_are_cached_and_invalidate_on_evidence_change(self):
         def judge(messages):
             candidates = json.loads(messages[-1]["content"])["candidates"]
