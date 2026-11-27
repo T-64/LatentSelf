@@ -417,8 +417,8 @@ def main(argv=None):
     steps.add_parser("baseline")
     label = steps.add_parser("label")
     label.add_argument("--limit",type=int)
-    for command in (label,experiment):
-        command.add_argument("--stage",choices=("both","prepare","score"),default="both",
+    for command,stages in ((label,("both","prepare","score")),(experiment,("both","pilot","prepare","score"))):
+        command.add_argument("--stage",choices=stages,default="both",
                              help="separate reader inference from LLM labeling on a shared GPU")
     s.set_defaults(f=cmd_interp)
     s = sub.add_parser("topics",help="cluster, name and compare conversation topics")
