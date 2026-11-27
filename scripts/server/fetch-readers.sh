@@ -10,8 +10,10 @@ export HF_HUB_DISABLE_XET=1 HF_HUB_DOWNLOAD_TIMEOUT=120
 fetch() {
     local repo=$1 revision=$2
     shift 2
+    local options=()
+    for pattern in "$@"; do options+=(--include "$pattern"); done
     for attempt in 1 2 3; do
-        if hf download "$repo" --revision "$revision" --max-workers 3 --include "$@"; then return; fi
+        if hf download "$repo" --revision "$revision" --max-workers 3 "${options[@]}"; then return; fi
         sleep "$((10 * attempt))"
     done
     return 1
