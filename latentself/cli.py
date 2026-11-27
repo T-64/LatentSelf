@@ -189,6 +189,9 @@ def cmd_eval(a):
     elif a.calibrate:
         from .calibration import calibrate
         print(json.dumps(calibrate(con,labels,rows),ensure_ascii=False,indent=2))
+    elif a.extend_pool:
+        for number,count in ev.extend_pool(con,labels,rows):
+            print(f"query {number}: {count} new candidates")
     else:
         report = list(ev.evaluate(con,labels,rows))
         print(json.dumps(report,ensure_ascii=False,indent=2))
@@ -215,6 +218,7 @@ def main(argv=None):
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--label",action="store_true")
     group.add_argument("--calibrate",action="store_true")
+    group.add_argument("--extend-pool",action="store_true")
     s.set_defaults(f=cmd_eval)
     s = sub.add_parser("embed", help="index new or changed model inputs")
     s.add_argument("--limit", type=int)

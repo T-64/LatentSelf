@@ -144,6 +144,26 @@ def evaluate(con,ev,rows,*,indexes=None,policy=None,llm=None):
                    (mode=="fast" or score["precision"]>=0.90) and (not row.get("photo") or score["photo_top5"]))}
 
 
+def extend_pool(con,ev,rows):
+    """Queue newly retrieved conversations after building the production index."""
+    from .search import configured_indexes,read_policy
+    policy = read_policy(con)
+    indices = configured_indexes(con,policy)
+    if not indices or any(not i.ids for i in indices):
+        raise ValueError("full evaluation requires populated indexes")
+    for number,row in enumerate(rows,1):
+        out = search(con,row["q"],images_only=bool(row.get("photo")),sort="score",indexes=indices,policy=policy)
+        if out["notices"]:
+            raise ValueError(f"query {number}: incomplete retrieval: {out['notices']}")
+        count = 0
+        with ev:
+            for r in out["results"]:
+                material = "\n".join([r["first_prompt"],*(s["text"] for s in r["snippets"])])
+                count += ev.execute("INSERT OR IGNORE INTO pool VALUES (?,?,?,?)",
+                                    (row["q"],r["conv_id"],'["full-index"]',material)).rowcount
+        yield number,count
+
+
 def default_backends():
     import os
     return [Embedder(VL),Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1"))]
