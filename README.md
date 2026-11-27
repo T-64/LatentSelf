@@ -45,7 +45,7 @@ scripts/server/down.sh embed
 
 长任务可用 `scripts/run-logged.sh enrich --images` 等方式在 Mac 后台运行。它会打印 PID 和私有日志路径。默认推理端点可用 `LATENTSELF_LLM_URL`、`LATENTSELF_EMBED_URL`、`LATENTSELF_TEXT_EMBED_URL`、`LATENTSELF_RERANK_URL` 覆盖。任务结束后按开始前记录的状态恢复服务。
 
-如果已有 Qwen 栈发布到所有网卡，可运行 `scripts/server/up.sh llm-private`。它使用已安装的镜像和只读模型目录，在服务器回环端口 8010 提供独立的单槽实例。将 SSH 隧道的本地 18000 转发到远端 8010，并设置 `LATENTSELF_LLM_URL=http://127.0.0.1:18000/v1`。结束后运行 `scripts/server/down.sh llm-private`。
+如果已有 Qwen 栈发布到所有网卡，可运行 `scripts/server/up.sh llm-private`。它使用已安装的镜像和只读模型目录，在服务器回环端口 8010 提供独立实例。默认只开一个推理槽。批量评测时，可以在新建实例和运行评测的同一环境中设置 `LATENTSELF_JUDGE_SLOTS=2`，并行处理两批候选，每槽保留 24,576 token 的上下文。将 SSH 隧道的本地 18000 转发到远端 8010，并设置 `LATENTSELF_LLM_URL=http://127.0.0.1:18000/v1`。结束后运行 `scripts/server/down.sh llm-private`。
 
 向量服务默认按单模型运行分配显存，`LATENTSELF_GPU_MEMORY_FRACTION` 可指定 vLLM 使用的显存比例。实测多服务共用显卡时，可以用 `LATENTSELF_KV_CACHE_BYTES` 指定每个新建向量或重排实例的 KV 缓存字节数。比较模型时可依次加载，每种模型的评测查询向量会保存在 Mac 的私有评测库中。
 
