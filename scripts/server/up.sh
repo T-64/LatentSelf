@@ -19,7 +19,7 @@ if [[ $role == llm ]]; then
 fi
 case "$role" in
     embed) model=Qwen/Qwen3-VL-Embedding-8B; port=8001; revision=2c4565515e0f265c6511776e7193b22c0968ddc7 ;;
-    text) model=Qwen/Qwen3-Embedding-8B; port=8003; revision= ;;
+    text) model=Qwen/Qwen3-Embedding-8B; port=8003; revision=1d8ad4ca9b3dd8059ad90a75d4983776a23d44af ;;
     rerank) model=Qwen/Qwen3-VL-Reranker-8B; port=8002; revision=b212dc8c91a8164aef1ea2de9c1a867611e75c04 ;;
 esac
 name="latentself-$role"
@@ -44,7 +44,6 @@ if [[ $role == llm-private ]]; then
 fi
 cache="$HOME/.cache/huggingface"
 modeldir="hub/models--${model/\//--}"
-if [[ -z $revision ]]; then revision=$(cat "$cache/$modeldir/refs/main"); fi
 snapshot="$modeldir/snapshots/$revision"
 test -s "$cache/$snapshot/config.json" || { echo "Model snapshot missing: $model" >&2; exit 1; }
 extra=()
