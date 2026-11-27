@@ -3,7 +3,7 @@ name = "latentself"
 version = "0.2.0"
 description = "Local personal data base over AI chat history: search, profile, recommendation, writing"
 requires-python = ">=3.12"
-dependencies = ["numpy", "mcp>=2.3,<3"]
+dependencies = ["numpy", "mcp>=1.29,<3"]
 
 [project.optional-dependencies]
 topics = ["igraph", "leidenalg"]
