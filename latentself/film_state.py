@@ -6,7 +6,7 @@ import random
 import unicodedata
 from uuid import uuid4
 
-from .catalog import dumps,set_state
+from .catalog import current_id,dumps,set_state
 from .embed import DIALOGUE
 from .evidence import content_hash
 from .exports import export_markdown
@@ -129,6 +129,7 @@ def review(con,out,answer=None,seed=42):
 
 
 def feedback(con,identifier,action):
+    identifier = current_id(con,identifier)
     row = con.execute("SELECT id FROM item WHERE id=?",(identifier,)).fetchone()
     if not row:
         matches = con.execute("""SELECT DISTINCT id FROM item LEFT JOIN item_alias a ON a.item_id=item.id

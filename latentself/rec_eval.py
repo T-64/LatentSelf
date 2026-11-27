@@ -3,7 +3,7 @@ from itertools import product
 import json
 from math import ceil,log2
 
-from .catalog import dumps
+from .catalog import current_id,dumps
 from .film_state import mention_table
 from .recommend import DEFAULT,candidates,rank,taste
 from .units import instant
@@ -31,7 +31,7 @@ def historical_states(con,cutoff):
         WHERE s.kind='rec_feedback' ORDER BY t.ts,t.id"""):
         if instant(ts)<instant(cutoff):
             event = json.loads(value)
-            states[event["item"]] = {"like":"watched","dislike":"watched","watched":"watched","wanted":"wanted",
+            states[current_id(con,event["item"])] = {"like":"watched","dislike":"watched","watched":"watched","wanted":"wanted",
                                      "dismiss":"dismissed"}[event["action"]]
     return states
 

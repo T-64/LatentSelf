@@ -56,6 +56,41 @@ def imdb(value):
     return m[0] if m else None
 
 
+def current_id(con,iid):
+    seen = set()
+    while iid not in seen:
+        seen.add(iid)
+        row = con.execute("SELECT v FROM meta WHERE k=?",("film_redirect:"+iid,)).fetchone()
+        if not row:
+            return iid
+        iid = row[0]
+    raise ValueError("cyclic film identifier redirect")
+
+
+def consolidate(con,old,new):
+    if old==new:
+        return
+    # Runs and feedback retain their original IDs in the historical record.
+    con.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("film_redirect:"+old,new))
+    a = con.execute("SELECT * FROM item_state WHERE item_id=?",(old,)).fetchone()
+    b = con.execute("SELECT * FROM item_state WHERE item_id=?",(new,)).fetchone()
+    if a:
+        priority = dict(chat_mention=1,owner_list=2,feedback=3)
+        primary = max((s for s in (a,b) if s),key=lambda s:(priority[s["source"]],s["updated_at"] or ""))
+        evidence = list(dict.fromkeys(k for s in (a,b) if s for k in json.loads(s["evidence"])))
+        con.execute("INSERT OR REPLACE INTO item_state VALUES (?,?,?,?,?,?)",
+                    (new,primary["status"],primary["rating"],primary["source"],dumps(evidence),primary["updated_at"]))
+        con.execute("DELETE FROM item_state WHERE item_id=?",(old,))
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='item_mention'").fetchone():
+        con.execute("""INSERT OR IGNORE INTO item_mention SELECT ?,turn_id,status,sentiment,input_hash,owner_correct
+            FROM item_mention WHERE item_id=?""",(new,old))
+        con.execute("DELETE FROM item_mention WHERE item_id=?",(old,))
+    con.execute("INSERT OR IGNORE INTO item_alias SELECT ?,alias FROM item_alias WHERE item_id=?",(new,old))
+    con.execute("DELETE FROM item_alias WHERE item_id=?",(old,))
+    con.execute("UPDATE item_key SET item_id=? WHERE item_id=?",(new,old))
+    con.execute("DELETE FROM item WHERE id=?",(old,))
+
+
 def import_catalog(con,root,owner_map=None,public_index=None):
     root = Path(root)
     sources = json.loads((root/"tspdt-2026.json").read_text())
@@ -64,12 +99,17 @@ def import_catalog(con,root,owner_map=None,public_index=None):
     rows = [(src,row) for src in ("recommendations","top1000") for row in sources[src]]
     rows.extend(("owner_list",row) for row in private["records"])
     known = {row["canonicalKey"]:imdb(row.get("imdb")) for _,row in rows if imdb(row.get("imdb"))}
+    prefix = "tspdt_imdb:"
+    for key,ext in con.execute("SELECT k,v FROM meta WHERE substr(k,1,?)=?",(len(prefix),prefix)):
+        known.setdefault(key[len(prefix):],ext)
     resolved = conflicts = 0
+    confirmed = {}
     if public_index:
         from .tspdt_ids import match_public_ids
         for canonical,ext in match_public_ids(sources["top1000"],public_index).items():
             if canonical not in known:
                 known[canonical] = ext
+                confirmed[canonical] = ext
                 resolved += 1
             elif known[canonical]!=ext:
                 conflicts += 1
@@ -81,17 +121,18 @@ def import_catalog(con,root,owner_map=None,public_index=None):
         entries[ident].append((src,row,ext))
     unknown_owner = 0
     with con:
+        con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",[(prefix+k,ext) for k,ext in confirmed.items()])
         for ident,members in entries.items():
             # Existing IDs can already have feedback or vectors. Keep them stable across catalog updates.
             existing = con.execute("SELECT id FROM item WHERE imdb_id=?",(members[0][2],)).fetchone()
+            older = {old[0] for _,row,_ in members for old in con.execute(
+                "SELECT item_id FROM item_key WHERE canonical=?",(row["canonicalKey"],))}
             if existing:
                 ident = existing[0]
-            else:
-                for _,row,_ in members:
-                    old = con.execute("SELECT item_id FROM item_key WHERE canonical=?",(row["canonicalKey"],)).fetchone()
-                    if old:
-                        ident = old[0]
-                        break
+            elif older:
+                ident = min(older)
+            for old in older-{ident}:
+                consolidate(con,old,ident)
             metadata = {}
             provenance = []
             for src,row,ext in members:

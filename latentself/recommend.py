@@ -7,7 +7,7 @@ import os
 import numpy as np
 
 from .analysis.features import difference
-from .catalog import dumps
+from .catalog import current_id
 from .evidence import content_hash
 from .topics import normalized
 from .units import instant
@@ -104,7 +104,7 @@ def feedback_factors(con,run,before=None):
             continue
         event = json.loads(raw)
         if event["action"] in ("like","dislike"):
-            latest[event["item"]] = event["action"]
+            latest[current_id(con,event["item"])] = event["action"]
     factors = defaultdict(lambda:1.)
     for iid,action in latest.items():
         for feature, in con.execute("SELECT feature FROM sae_act WHERE run_id=? AND unit_id=? ORDER BY act DESC,feature LIMIT 10",
