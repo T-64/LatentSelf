@@ -4,9 +4,13 @@ from .read_api import Reader
 
 
 def main():
-    from mcp.server import MCPServer
+    import mcp.server
     from mcp.types import ToolAnnotations
-    server = MCPServer("LatentSelf")
+    if hasattr(mcp.server, "MCPServer"):
+        server = mcp.server.MCPServer("LatentSelf")
+    else:
+        from mcp.server.fastmcp import FastMCP
+        server = FastMCP("LatentSelf")
     reader = Reader(config.DB_PATH)
     annotations = ToolAnnotations(readOnlyHint=True,destructiveHint=False)
     for tool in (reader.search,reader.show_conversation,reader.timeline,reader.digest,reader.facts,
