@@ -2,11 +2,32 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from zipfile import ZipFile
 
 from latentself.db import SCHEMA, connect
 
 
 class MigrationTest(unittest.TestCase):
+    def test_recognizes_frame_archives_on_ordinary_turns_in_existing_v2_databases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            db = root/"db"
+            con = connect(db)
+            con.execute("DELETE FROM meta WHERE k='frame_archive_origins_v1'")
+            con.execute("INSERT INTO turn VALUES ('t','gemini','prompt','2020','fixture','snap')")
+            for name,member in [("camera.zip","nested/frame_0.png"),("document.zip","notes.txt")]:
+                with ZipFile(root/name,"w") as archive:
+                    archive.writestr(member,b"fixture")
+                con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,origin,caption)
+                    VALUES (?,'t',0,?,?,'exact','user','preserved')""",(name,name,str(root/name)))
+            con.commit()
+            con.close()
+            for _ in range(2):
+                con = connect(db)
+                self.assertEqual([tuple(r) for r in con.execute("SELECT origin,caption FROM attachment ORDER BY id")],
+                                 [("live_frame","preserved"),("user","preserved")])
+                con.close()
+
     def test_upgrade_preserves_legacy_data_and_reopens(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "legacy.db"

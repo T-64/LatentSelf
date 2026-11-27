@@ -1,10 +1,11 @@
 """Prepare attachment images on the Mac; only resized bytes enter requests."""
 import base64
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 from zipfile import ZipFile
+
+from ..ingest.frames import frame_names
 
 KINDS = ("photo", "screenshot", "document", "chart", "meme", "other")
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["caption", "ocr", "tags", "content_kind"],
@@ -26,19 +27,14 @@ def prepare(path, archive=False):
         if not archive:
             return [_jpeg(path, jpeg)], 0
         with ZipFile(path) as z:
-            frames = []
-            for name in z.namelist():
-                match = re.fullmatch(r"frame_(\d+)\.png", Path(name).name, re.I)
-                if match:
-                    frames.append((int(match[1]), name))
-            frames.sort()
+            frames = frame_names(z)
             if not frames:
                 return [], 0
             selected = sorted({0, len(frames) // 2, len(frames) - 1})
             images = []
             for index in selected:
                 source = root / "frame.png"
-                source.write_bytes(z.read(frames[index][1]))
+                source.write_bytes(z.read(frames[index]))
                 images.append(_jpeg(source, jpeg))
             return images, len(frames) - len(selected)
 

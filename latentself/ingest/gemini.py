@@ -13,6 +13,8 @@ from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
+from .frames import is_frame_archive
+
 SOURCE = "gemini"
 DIALOGUE = ("prompt", "branch", "link_import", "live")
 LINK_WINDOW_S = 30 * 60  # unlinked canvas/feedback attach to a dialogue turn this close before it
@@ -152,7 +154,7 @@ def ingest(con: sqlite3.Connection, snapshot: Path) -> dict:
             origin = "user"
             if name.startswith("watermarked_img_"):
                 origin = "generated"
-            elif kind == "live" and name.lower().endswith(".zip"):
+            elif name.lower().endswith(".zip") and is_frame_archive(path, fallback=kind=="live"):
                 origin = "live_frame"
             atts.append((f"{tid}:{pos}", tid, pos, orig.get(name), name, str(path) if path else None, match, mime, origin))
         if kind == "canvas":

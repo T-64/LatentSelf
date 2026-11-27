@@ -2,6 +2,8 @@
 import sqlite3
 from pathlib import Path
 
+from .ingest.frames import is_frame_archive
+
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -79,11 +81,25 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_turn USING fts5(
 """
 
 
+def _backfill_frame_origins(con):
+    key = "frame_archive_origins_v1"
+    if con.execute("SELECT 1 FROM meta WHERE k=?",(key,)).fetchone():
+        return
+    archives = con.execute("""SELECT id,path,origin FROM attachment WHERE origin IN ('user','live_frame')
+                              AND path IS NOT NULL AND lower(stored_name) LIKE '%.zip'""").fetchall()
+    for aid,path,previous in archives:
+        origin = "live_frame" if is_frame_archive(path, fallback=previous=="live_frame") else "user"
+        if origin != previous:
+            con.execute("UPDATE attachment SET origin=? WHERE id=?",(origin,aid))
+    con.execute("INSERT INTO meta VALUES (?, '1')",(key,))
+
+
 def _migrate(con: sqlite3.Connection) -> None:
     with con:
         con.execute("BEGIN IMMEDIATE")
         version = con.execute("PRAGMA user_version").fetchone()[0]
         if version == 2:
+            _backfill_frame_origins(con)
             return
         if version != 0:
             raise ValueError(f"unsupported database version {version}")
@@ -109,6 +125,7 @@ def _migrate(con: sqlite3.Connection) -> None:
             )
         """)
         con.execute("PRAGMA user_version = 2")
+        _backfill_frame_origins(con)
 
 
 def connect(path: Path) -> sqlite3.Connection:
