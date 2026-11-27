@@ -35,6 +35,7 @@ if [[ $role == llm-private ]]; then
     test -s "$models/Qwen3.8-27B-UD-Q6_K_XL.gguf"
     test -s "$models/mmproj-Qwen3.8-27B-F16.gguf"
     exec docker run -d --rm --name "$name" --label "latentself.role=$role" --gpus all \
+        --health-cmd='curl -fsS http://127.0.0.1:8000/health' --health-start-period=180s \
         --log-driver none --tmpfs /tmp --read-only --mount "type=bind,src=$models,dst=/models,readonly" \
         -p 127.0.0.1:8010:8000 "$image" -m /models/Qwen3.8-27B-UD-Q6_K_XL.gguf \
         --mmproj /models/mmproj-Qwen3.8-27B-F16.gguf --alias qwen3.8-27b \
