@@ -10,6 +10,12 @@ from latentself.backends.llm import LocalLLM
 
 class BackendTest(unittest.TestCase):
     @patch("latentself.backends.llm.post")
+    def test_truncated_response_is_never_treated_as_a_verdict(self, request):
+        request.return_value = {"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}
+        with self.assertRaisesRegex(ValueError,"max_tokens=48"):
+            LocalLLM().chat([{"role":"user","content":"fixture"}],json_schema={"type":"object"},max_tokens=48)
+
+    @patch("latentself.backends.llm.post")
     def test_structured_vision_request(self, request):
         request.return_value = {"choices": [{"message": {"content": '{"ok":true}'}}]}
         messages = [{"role": "user", "content": "describe"}]

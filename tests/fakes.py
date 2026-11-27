@@ -11,7 +11,7 @@ class FakeLLM:
         self.reply = reply
         self.calls = []
 
-    def chat(self, messages, images=(), json_schema=None):
+    def chat(self, messages, images=(), json_schema=None, max_tokens=None):
         self.calls.append((messages, images, json_schema))
         return self.reply(messages) if callable(self.reply) else self.reply
 
