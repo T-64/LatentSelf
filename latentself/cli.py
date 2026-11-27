@@ -222,6 +222,23 @@ def cmd_digest(a):
     print(json.dumps(digests(_con(),LocalLLM(),config.OUT,a.level,a.period),ensure_ascii=False))
 
 
+def cmd_facts(a):
+    from .backends.embed import Embedder,VL
+    from .backends.llm import LocalLLM
+    from .fact_merge import merge
+    from .facts import extract
+    from .search import read_policy
+    con = _con()
+    if a.action=="extract":
+        result = extract(con,LocalLLM(),a.limit)
+    else:
+        backend = Embedder(read_policy(con).get("text_model",VL))
+        result = merge(con,LocalLLM(),backend,a.vectors_only)
+    print(json.dumps(result,ensure_ascii=False))
+    if result.get("failed") or result.get("interrupted"):
+        sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -232,6 +249,11 @@ def main(argv=None):
     s.add_argument("--level",choices=("month","quarter","year"))
     s.add_argument("--period")
     s.set_defaults(f=cmd_digest)
+    s = sub.add_parser("facts",help="extract, reconcile and verify personal facts")
+    steps = s.add_subparsers(dest="action",required=True)
+    steps.add_parser("extract").add_argument("--limit",type=int)
+    steps.add_parser("merge").add_argument("--vectors-only",action="store_true")
+    s.set_defaults(f=cmd_facts)
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
     s.add_argument("query")
     for flag in ("strict","images","answers","json"):

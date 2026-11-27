@@ -164,6 +164,8 @@ def connect(path: Path) -> sqlite3.Connection:
     try:
         con.executescript(SCHEMA)
         _migrate(con)
+        con.execute("""CREATE TABLE IF NOT EXISTS fact_alias (
+            id TEXT PRIMARY KEY,fact_id TEXT NOT NULL REFERENCES fact(id) ON DELETE CASCADE)""")
     except Exception:
         con.close()
         raise
