@@ -10,6 +10,12 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
+class InferenceHTTPError(OSError):
+    def __init__(self, status):
+        self.status = status
+        super().__init__(f"inference endpoint returned HTTP {status}")
+
+
 def post(url, payload, timeout=120):
     target = urlparse(url)
     if target.scheme not in ('http', 'https') or target.hostname not in ('127.0.0.1', 'localhost', '::1'):
@@ -21,4 +27,4 @@ def post(url, payload, timeout=120):
         with opener.open(request, timeout=timeout) as response:
             return json.load(response)
     except HTTPError as error:
-        raise OSError(f"inference endpoint returned HTTP {error.code}") from error
+        raise InferenceHTTPError(error.code) from error

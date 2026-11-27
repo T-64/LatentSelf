@@ -6,11 +6,34 @@ from unittest.mock import patch
 import numpy as np
 
 from tests.fakes import FakeEmbed
+from latentself.backends import InferenceHTTPError
 from latentself.db import connect
 from latentself.embed import index, turn_inputs
 
 
 class EmbedTest(unittest.TestCase):
+    def test_invalid_input_does_not_discard_valid_neighbors(self):
+        class Backend(FakeEmbed):
+            def embed_texts(self,texts,kind="doc"):
+                if "invalid" in texts:
+                    raise InferenceHTTPError(400)
+                return super().embed_texts(texts,kind)
+
+        with tempfile.TemporaryDirectory() as folder:
+            con = connect(Path(folder)/"db")
+            self.addCleanup(con.close)
+            for key,text in enumerate(("first","invalid","last")):
+                con.execute("INSERT INTO turn VALUES (?,'fixture','prompt','2020',?,'snapshot')",(str(key),text))
+            backend = Backend()
+            def run():
+                return index(con,backend,kinds=("turn",),include_images=False,emit=lambda _:None)
+            initial = run()
+            self.assertEqual((initial["success"],initial["failed"]),(2,1))
+            self.assertEqual(initial["failures"][0]["id"],"1")
+            con.execute("UPDATE turn SET prompt='corrected' WHERE id='1'")
+            resumed = run()
+            self.assertEqual((resumed["success"],resumed["skipped"],resumed["failed"]),(1,2,0))
+
     @patch("latentself.embed.prepare",return_value=(["data:image/jpeg;base64,eA=="],0))
     def test_visual_comparison_indexes_only_selected_turns_and_resumes(self,prepare):
         with tempfile.TemporaryDirectory() as folder:

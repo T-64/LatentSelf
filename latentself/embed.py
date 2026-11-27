@@ -8,6 +8,7 @@ from zipfile import BadZipFile
 
 import numpy as np
 
+from .backends import InferenceHTTPError
 from .backends.embed import normalize
 from .enrich.images import prepare
 
@@ -62,6 +63,11 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
                     ((kind,key,backend.model,digest,len(vec),vec.astype("<f2").tobytes())
                      for (kind,key,digest,_), vec in zip(batch,vectors,strict=True)))
         except (OSError,ValueError,KeyError) as exc:
+            if isinstance(exc,InferenceHTTPError) and exc.status in (400,413,422) and len(batch)>1:
+                mid = len(batch)//2
+                save(batch[:mid],encode)
+                save(batch[mid:],encode)
+                return
             stats["failed"] += len(batch)
             stats["failures"].extend({"kind":kind,"id":key,"error":str(exc)} for kind,key,_,_ in batch)
         else:
