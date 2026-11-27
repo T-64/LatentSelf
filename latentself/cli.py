@@ -415,7 +415,11 @@ def main(argv=None):
     encoder.add_argument("--answers",action="store_true")
     encoder.add_argument("--limit",type=int)
     steps.add_parser("baseline")
-    steps.add_parser("label").add_argument("--limit",type=int)
+    label = steps.add_parser("label")
+    label.add_argument("--limit",type=int)
+    for command in (label,experiment):
+        command.add_argument("--stage",choices=("both","prepare","score"),default="both",
+                             help="separate reader inference from LLM labeling on a shared GPU")
     s.set_defaults(f=cmd_interp)
     s = sub.add_parser("topics",help="cluster, name and compare conversation topics")
     s.add_argument("action",choices=("build","name","report"))

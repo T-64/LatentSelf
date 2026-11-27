@@ -135,6 +135,8 @@ lself search --feature 123 --json
 
 历史时区用 `LATENTSELF_TZ_PERIODS` 指定，例如 `[{"from":"2024-01-01","zone":"Europe/Berlin"}]`。未覆盖时段按 UTC 统计。`LATENTSELF_LIFE_DATE` 可设置人生节点对照日期。本机看板在输出目录的 `features/index.html`，可按名称筛选、查看原文高亮、打开出处。
 
+在共用一张显卡时，可以先为每个实验运行条件执行 `lself interp experiment --model … --precision … --stage prepare`。停掉读者、启动本地 LLM 后，使用同样的参数和 `--stage score`。前一步只需要读者，后一步从 Mac 的私有检查点读取样本并打分。全量特征命名 `lself interp label` 也支持这两个阶段。
+
 ### 电影推荐
 
 设置 `LATENTSELF_CATALOG_SRC` 指向包含两个目录导出文件的文件夹。导入会按 IMDb ID 和 canonicalKey 合并。若私人目录只有精选清单、没有明确的观看状态，导入会报告数量并保留未知状态。可通过 `LATENTSELF_OWNER_LIST_STATUS` 将你明确指定的来源键映射到 `watched` 或 `wanted`。
