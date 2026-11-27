@@ -10,7 +10,7 @@ class ReviewMigrationTest(unittest.TestCase):
     def test_upgrade_from_v2_preserves_vectors_and_reopens_with_facts(self):
         with tempfile.TemporaryDirectory() as folder:
             db = Path(folder)/"fixture.db"
-            with patch("latentself.units.create_tables"):
+            with patch("latentself.units.create_tables"),patch("latentself.catalog.create_tables"):
                 con = connect(db)
             for table in ("fact_evidence","fact_source","fact","digest","conv_summary"):
                 con.execute(f"DROP TABLE {table}")
@@ -21,7 +21,7 @@ class ReviewMigrationTest(unittest.TestCase):
             for attempt in range(2):
                 con = connect(db)
                 try:
-                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0],4)
+                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0],5)
                     self.assertEqual(con.execute("SELECT vec FROM embedding").fetchone()[0],b"\x00\x3c")
                     if attempt==0:
                         con.execute("""INSERT INTO fact(id,text,kind,confidence,status)
