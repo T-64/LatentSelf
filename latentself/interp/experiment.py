@@ -1,5 +1,6 @@
 """Resumable matched-reader experiments and aggregate model selection."""
 from collections import defaultdict
+from itertools import batched
 import json
 import random
 from statistics import mean
@@ -56,27 +57,38 @@ def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print,stage=
     metrics = []
     for layer in layers:
         prefix = f"sae_exp:{key}:{precision}:{layer}:{sample_key}:"
-        def run(uid,text,formula,store=None):
-            cache_key = prefix+formula+":"+uid
-            saved = con.execute("SELECT v FROM meta WHERE k=?",(cache_key,)).fetchone()
-            if saved:
-                return json.loads(saved[0])
-            if stage=="score":
-                raise ValueError("the reader has not finished preparing this matched experiment")
-            start = monotonic()
-            data = client.encode([text],[layer],formula=formula,experiment=True)[0][str(layer)]
-            if any(data[k]!=v for k,v in (("reader",reader),("sae_repo",repo),("precision",precision),("formula",formula))):
-                raise ValueError("reader settings differ from this experiment")
-            data["seconds"] = monotonic()-start
-            if store:
-                store_unit(con,store,uid,content_hash(text),data)
-            with con:
-                con.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",(cache_key,json.dumps(data,separators=(",",":"))))
-            return data
+        def run_units(units,formula,run_id):
+            for batch in batched(units,8):
+                results,pending = {},[]
+                for uid,text in batch:
+                    cache_key = prefix+formula+":"+uid
+                    saved = con.execute("SELECT v FROM meta WHERE k=?",(cache_key,)).fetchone()
+                    if saved:
+                        results[uid] = json.loads(saved[0])
+                    else:
+                        pending.append((uid,text,cache_key))
+                if pending:
+                    if stage=="score":
+                        raise ValueError("the reader has not finished preparing this matched experiment")
+                    start = monotonic()
+                    replies = client.encode([text for _,text,_ in pending],[layer],formula=formula,experiment=True)
+                    if len(replies)!=len(pending):
+                        raise ValueError("reader batch size differs from the request")
+                    seconds = (monotonic()-start)/len(pending)
+                    for (uid,text,cache_key),reply in zip(pending,replies,strict=True):
+                        data = reply[str(layer)]
+                        if any(data[k]!=v for k,v in (("reader",reader),("sae_repo",repo),("precision",precision),("formula",formula))):
+                            raise ValueError("reader settings differ from this experiment")
+                        data["seconds"] = seconds
+                        store_unit(con,run_id,uid,content_hash(text),data)
+                        with con:
+                            con.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",(cache_key,json.dumps(data,separators=(",",":"))))
+                        results[uid] = data
+                yield from (results[uid] for uid,_ in batch)
         errors = {}
         for formula in ("card","centered"):
             tmp_run = register(con,key,precision,layer,formula,"turn_self",sample_key)
-            pilot = [run(uid,text,formula,tmp_run) for uid,text in sample[:100]]
+            pilot = list(run_units(sample[:100],formula,tmp_run))
             errors[formula] = sum(r["sse"] for r in pilot)/max(1e-10,sum(r["variance"] for r in pilot))
         chosen = min(errors,key=errors.get)
         if stage=="pilot":
@@ -88,8 +100,7 @@ def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print,stage=
         active = set()
         total_tokens = ce_tokens = 0
         sse = var = loss = seconds = l0 = 0.
-        for uid,text in sample:
-            r = run(uid,text,chosen,rid)
+        for r in run_units(sample,chosen,rid):
             active.update(r["active_features"])
             n = max(0,r["n_tokens"]-1)
             total_tokens += n
