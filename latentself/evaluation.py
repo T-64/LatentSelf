@@ -16,10 +16,16 @@ from .backends.embed import Reranker
 def read_queries(path):
     # Psych is in the macOS system Ruby. It handles YAML quoting, inline
     # mappings and comments without adding a Python dependency.
-    data = subprocess.run(["/usr/bin/ruby","-ryaml","-rjson","-e",
-                           "puts JSON.generate(YAML.safe_load(STDIN.read))"],
-                          input=Path(path).read_text(),text=True,capture_output=True,check=True)
-    rows = json.loads(data.stdout)["queries"]
+    source = Path(path).read_text()
+    if Path("/usr/bin/ruby").is_file():
+        data = subprocess.run(["/usr/bin/ruby","-ryaml","-rjson","-e",
+                               "puts JSON.generate(YAML.safe_load(STDIN.read))"],
+                              input=source,text=True,capture_output=True,check=True)
+        rows = json.loads(data.stdout)["queries"]
+    else:
+        # The Linux inference image already includes PyYAML.
+        from yaml import safe_load
+        rows = safe_load(source)["queries"]
     if not rows or any(not isinstance(r.get("q"),str) or not r["q"].strip() for r in rows):
         raise ValueError("every evaluation query requires a nonempty q")
     return rows
