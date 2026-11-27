@@ -92,12 +92,13 @@ def read_policy(con):
     return json.loads(row[0]) if row else {}
 
 
-def configured_indexes(con, policy):
+def configured_indexes(con, policy, *, visual=None, text=None):
+    visual = visual or Embedder(VL)
     if policy.get("text_model") == TEXT:
         import os
-        return [VectorIndex(con,Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1")),("turn",)),
-                VectorIndex(con,Embedder(VL),("attachment",))]
-    return [VectorIndex(con,Embedder(VL),("turn","attachment"))]
+        text = text or Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1"))
+        return [VectorIndex(con,text,("turn",)), VectorIndex(con,visual,("attachment",))]
+    return [VectorIndex(con,visual,("turn","attachment"))]
 
 
 def _previews(con, cid, hits, terms, answers, stats):

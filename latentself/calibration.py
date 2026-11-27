@@ -11,7 +11,7 @@ import numpy as np
 from .backends.embed import VL, TEXT, Reranker
 from .backends.llm import LocalLLM
 from .evaluation import default_backends, evaluation_vector
-from .search import VectorIndex, _judge, _previews, expand, matching_turns, rank_conversations
+from .search import VectorIndex, _judge, _previews, configured_indexes, expand, matching_turns, rank_conversations
 
 
 def quality(predictions,gold):
@@ -128,8 +128,15 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None,*,score_only=Fals
                            for m,result in models.items()})
     policy = {"text_model":winner,"threshold":models[winner]["threshold"]}
     work,observations = [],[]
+    by_model = {backend.model:backend for backend in backends}
+    selected = configured_indexes(con,policy,visual=by_model[VL],text=by_model[TEXT])
     for s in sample_sets[winner]:
-        vec = {tid:v for tid,v in s["scores"].items() if tid in s["top"] or v>=policy["threshold"]}
+        vec = {}
+        for idx in selected:
+            query_vec = evaluation_vector(ev,idx.backend,s["query"])
+            hits,_ = idx.recall(s["query"],s["scores"].keys(),policy["threshold"],300,query_vec)
+            for tid,score in hits.items():
+                vec[tid] = max(score,vec.get(tid,-1.0))
         ranked,hits = rank_conversations(s["keywords"],vec,membership)
         evidence = {cid:_previews(con,cid,hits[cid],s["terms"],False,{"judge_prompt_chars_omitted":0})[1]
                     for _,cid in ranked[:200]}

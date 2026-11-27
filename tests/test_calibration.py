@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tests.fakes import FakeEmbed, FakeLLM
 from latentself.backends.embed import TEXT, VL
@@ -10,7 +11,7 @@ from latentself.db import connect
 from latentself.embed import index
 from latentself.evaluation import evaluation_db, evaluate, prepare
 from latentself.ingest.gemini import ingest
-from latentself.search import read_policy, VectorIndex
+from latentself.search import rank_conversations, read_policy, VectorIndex
 
 
 class CalibrationTest(unittest.TestCase):
@@ -37,6 +38,12 @@ class CalibrationTest(unittest.TestCase):
                 backend.model = name
                 index(con,backend,emit=lambda _:None)
                 backends.append(backend)
+            other = con.execute("SELECT id FROM turn WHERE prompt='unrelated'").fetchone()[0]
+            con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,mime,origin)
+                VALUES ('visual',?,0,'fixture.png','fixture.png','exact','image/png','user')""",(other,))
+            con.execute("""INSERT INTO embedding SELECT 'attachment','visual',e.model,e.dim,e.input_hash,e.vec
+                FROM embedding e JOIN turn t ON t.id=e.item_id
+                WHERE e.item_kind='turn' AND e.model=? AND t.prompt='fixture'""",(VL,))
             def reply(messages):
                 if "candidates" not in messages[-1]["content"]:
                     return {"terms":[f"alias{i}" for i in range(8)]}
@@ -57,7 +64,11 @@ class CalibrationTest(unittest.TestCase):
             ev.execute("INSERT INTO label VALUES ('fixture','bb',0,NULL)")
             calls_before = [list(b.calls) for b in backends]
             scorer = Reranker()
-            prepared = calibrate(con,ev,rows,backends,llm,scorer,score_only=True)
+            for winner in (VL,TEXT):
+                with patch("latentself.calibration.choose_model",return_value=winner), \
+                        patch("latentself.calibration.rank_conversations",wraps=rank_conversations) as ranked:
+                    prepared = calibrate(con,ev,rows,backends,llm,scorer,score_only=True)
+                    self.assertGreater(ranked.call_args.args[1][other],0.99)
             self.assertEqual(prepared["candidates"],2)
             self.assertEqual(read_policy(con),{})
             def offline(*args):
