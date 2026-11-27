@@ -15,3 +15,51 @@ lself open <attachment_id>       # 打开附件
 ```
 
 运行测试：`python3 -m unittest discover -s tests`。测试用的是合成数据，不含真实数据。
+
+## P1 附件与语义搜索
+
+Mac 端需要 Python 3.12+ 和 NumPy。图片处理使用 macOS 自带的 `sips`，PDF 需要 Poppler 的 `pdftotext`。DOCX 在本地解析；Live 使用已有转写，并从 ZIP 选择首、中、尾帧。每个附件单独提交，重新运行可以续接。
+
+```bash
+lself enrich --docs --limit 5
+lself enrich --images --limit 5
+lself enrich --retry-errors
+lself embed --limit 50
+lself search '检索主题' --terms '同义词,译名' --sort score
+lself search '检索主题' --strict --images --since 2025-01 --until 2025-12 --json
+```
+
+默认检索提问及附件、Canvas 内容，`--answers` 同时检索回答。结果中的 `counts` 记录候选截断，`omitted_snippets` 记录每个对话省略的摘录数。模型离线时输出会说明降级原因。JSON 中的 `mode=unjudged` 表示候选仍待相关性判断。
+
+### GPU 服务
+
+先运行 `scripts/server/status.sh` 记录容器、原有 Qwen 服务和显存，再按需要启停。模型文件下载到 GPU 主机的 Hugging Face 缓存。服务角色分别为 `embed`（视觉向量）、`text`（对照模型）、`rerank` 和 `llm`。独立模型服务的端口仅发布到服务器回环地址。既有 Qwen 栈也需要满足相同的绑定要求。
+
+```bash
+scripts/server/fetch-models.sh             # 使用镜像时加 mirror
+scripts/server/up.sh embed
+ssh -N -L 127.0.0.1:8000:127.0.0.1:8000 -L 127.0.0.1:8001:127.0.0.1:8001 \
+       -L 127.0.0.1:8002:127.0.0.1:8002 -L 127.0.0.1:8003:127.0.0.1:8003 server
+scripts/server/down.sh embed
+```
+
+长任务可用 `scripts/run-logged.sh enrich --images` 等方式在 Mac 后台运行。它会打印 PID 和私有日志路径。默认推理端点可用 `LATENTSELF_LLM_URL`、`LATENTSELF_EMBED_URL`、`LATENTSELF_TEXT_EMBED_URL`、`LATENTSELF_RERANK_URL` 覆盖。任务结束后按开始前记录的状态恢复服务。
+
+### 模型比较与验收
+
+私有查询文件默认为 `$LATENTSELF_DATA/processed/latentself/eval/queries.yaml`，顶层 `queries` 列表的每项使用 `q`，照片项加 `photo: true`。标签保存在同目录的 `labels.sqlite3`。以下步骤先构建小范围比较语料（扩展关键词命中和照片轮次），模型选择之后再建立全量索引。
+
+```bash
+lself eval --index-pool Qwen/Qwen3-VL-Embedding-8B
+lself eval --index-pool Qwen/Qwen3-Embedding-8B
+lself eval --prepare
+lself eval --label        # 每次最多 30 项，照片查询可标记具体文件
+lself eval --calibrate    # 输出匿名汇总，选定策略存入数据库
+lself embed
+lself eval --extend-pool  # 将全库检索新增的候选加入同一份标注清单
+lself eval --label
+lself eval
+scripts/smoke_p1.sh
+```
+
+校准比较两种模型的文本召回率，再比较逐个判断和分级判断的质量与耗时。最终评测使用全量索引，逐查询列出漏报、误报、待标注项和照片前五命中。其明细仅保存在本地。
