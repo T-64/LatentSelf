@@ -1,6 +1,8 @@
 """Build search/profile inputs and incrementally store native-size unit vectors."""
 import hashlib
 import json
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from itertools import batched
 from pathlib import Path
 from subprocess import SubprocessError
@@ -51,9 +53,10 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
     existing = {(r[0],r[1]):r[2] for r in con.execute(
         "SELECT item_kind,item_id,input_hash FROM embedding WHERE model=?", (backend.model,))}
     stats = dict(success=0, skipped=0, failed=0, failures=[], limited=0, omitted_chars=0, omitted_frames=0)
-    def save(batch, encode):
+    def save(batch, encode, future=None):
         try:
-            vectors = normalize(encode([b[3] for b in batch]))
+            result = future.result() if future is not None else encode([b[3] for b in batch])
+            vectors = normalize(result)
             if len(vectors) != len(batch):
                 raise ValueError("embedding service returned the wrong number of vectors")
             with con:
@@ -73,6 +76,19 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
         else:
             stats["success"] += len(batch)
             emit(f"success {stats['success']}")
+
+    def run_batches(items, size, encode):
+        # Overlap SSH requests while keeping SQLite reads and commits on the caller thread.
+        pending = deque()
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            for batch in batched(items,size):
+                future = workers.submit(encode,[entry[3] for entry in batch])
+                pending.append((batch,future))
+                if len(pending)==2:
+                    oldest,result = pending.popleft()
+                    save(oldest,encode,result)
+            for batch,future in pending:
+                save(batch,encode,future)
 
     def changed(kind,key,data,encoded):
         digest = hashlib.sha1(encoded).hexdigest()
@@ -101,8 +117,7 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
                 used += 1
                 yield from pending
     if kinds:
-        for batch in batched(pending_texts(),32):
-            save(batch,backend.embed_texts)
+        run_batches(pending_texts(),32,backend.embed_texts)
 
     def pending_images():
         used = 0
@@ -128,6 +143,5 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
                 stats["failed"] += 1
                 stats["failures"].append({"kind":"attachment","id":row["id"],"error":str(exc)})
     if include_images and backend.multimodal:
-        for batch in batched(pending_images(),4):
-            save(batch,backend.embed_images)
+        run_batches(pending_images(),4,backend.embed_images)
     return stats

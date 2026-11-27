@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,25 @@ from latentself.embed import index, turn_inputs
 
 
 class EmbedTest(unittest.TestCase):
+    def test_overlapping_requests_commit_each_batch_on_the_database_thread(self):
+        rendezvous = threading.Barrier(2)
+
+        class Backend(FakeEmbed):
+            def embed_texts(self,texts,kind="doc"):
+                rendezvous.wait(timeout=5)
+                return super().embed_texts(texts,kind)
+
+        with tempfile.TemporaryDirectory() as folder:
+            con = connect(Path(folder)/"db")
+            self.addCleanup(con.close)
+            con.executemany("INSERT INTO turn VALUES (?,'fixture','prompt','2020',?,'snapshot')",
+                            [(str(i),f"fixture {i}") for i in range(40)])
+            progress = []
+            result = index(con,Backend(),kinds=("turn",),include_images=False,emit=progress.append)
+            self.assertEqual(result["success"],40)
+            self.assertEqual(progress,["success 32","success 40"])
+            self.assertEqual(con.execute("SELECT count(*) FROM embedding").fetchone()[0],40)
+
     def test_invalid_input_does_not_discard_valid_neighbors(self):
         class Backend(FakeEmbed):
             def embed_texts(self,texts,kind="doc"):
