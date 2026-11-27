@@ -1,3 +1,4 @@
+import base64
 import os
 
 import numpy as np
@@ -26,8 +27,9 @@ class Embedder:
         self.multimodal = model == VL
 
     def _request(self, **fields):
-        rows = post(self.url + "/embeddings", {"model": self.model, **fields})["data"]
-        return [r["embedding"] for r in sorted(rows, key=lambda r: r["index"])]
+        rows = post(self.url + "/embeddings", {"model": self.model, "encoding_format": "base64", **fields})["data"]
+        return [np.frombuffer(base64.b64decode(r["embedding"],validate=True),dtype="<f4")
+                for r in sorted(rows,key=lambda r: r["index"])]
 
     def _chat(self, text, images, kind):
         content = [{"type": "image_url", "image_url": {"url": image}} for image in images]

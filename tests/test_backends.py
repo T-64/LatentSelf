@@ -1,3 +1,4 @@
+import base64
 import unittest
 from unittest.mock import patch
 
@@ -28,12 +29,14 @@ class BackendTest(unittest.TestCase):
 
     @patch("latentself.backends.embed.post")
     def test_model_specific_query_and_document_format(self, request):
-        request.return_value = {"data": [{"index": 0, "embedding": [3, 4]}]}
+        encoded = base64.b64encode(np.array([3,4],dtype="<f4").tobytes()).decode("ascii")
+        request.return_value = {"data": [{"index": 0, "embedding": encoded}]}
         for model in (TEXT, VL):
             backend = Embedder(model)
             for kind in ("query", "doc"):
                 np.testing.assert_allclose(backend.embed_texts(["fixture"],kind), [[0.6,0.8]])
                 payload = request.call_args.args[1]
+                self.assertEqual(payload["encoding_format"],"base64")
                 if model == TEXT:
                     self.assertEqual(payload["input"][0].startswith("Instruct:"),kind == "query")
                 else:
