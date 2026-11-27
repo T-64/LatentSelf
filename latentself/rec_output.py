@@ -6,6 +6,7 @@ import re
 from uuid import uuid4
 
 from .catalog import dumps
+from .sources import conversation_url
 from .exports import export_markdown
 from .rec_eval import BACKTEST_VERSION
 from .recommend import candidates,rank,taste
@@ -34,7 +35,7 @@ def explanation(con,llm,run,row,profile,out):
             src = con.execute("""SELECT t.prompt,min(tc.conv_id) FROM turn t LEFT JOIN turn_conv tc ON tc.turn_id=t.id
                                  WHERE t.id=? GROUP BY t.id""",(tid,)).fetchone()
             if src and src[0].strip():
-                evidence.append(dict(turn_id=tid,quote=src[0][:60],url="https://gemini.google.com/app/"+src[1] if src[1] else None))
+                evidence.append(dict(turn_id=tid,quote=src[0][:60],url=conversation_url(con,src[1])))
         if evidence:
             reasons.append(dict(feature=feature,label=name,contribution=value,evidence=evidence,
                                 dashboard=str(Path(out)/"features"/f"{feature}.html")))

@@ -2,7 +2,7 @@
 from collections import Counter
 from html import escape
 import json
-from urllib.parse import quote
+from ..sources import conversation_url
 
 from ..analysis.report import search_feature
 from ..backends import post
@@ -96,8 +96,8 @@ def build(con,client,run,out,limit=None):
                          timeout=600)["results"][0][str(spec["layer"])]
             marked,omitted = highlight(text,reply["offsets"],reply["token_acts"],hit["argmax_tok"])
             omitted_text += omitted
-            link = "https://gemini.google.com/app/"+quote(hit["conv_id"] or "",safe="")
-            body += f'<article><a class="source" href="{link}">{escape(hit["ts"][:10])} · 出处</a><blockquote>{marked}</blockquote></article>'
+            link = conversation_url(con,hit["conv_id"]) or ""
+            body += f'<article><a class="source" href="{escape(link,quote=True)}">{escape(hit["ts"][:10])} · 出处</a><blockquote>{marked}</blockquote></article>'
         body += f'<p>展示 {min(20,len(hits))} / {len(hits)} 条激活样本</p>'
         co = con.execute("""SELECT b.feature,count(*) AS n FROM sae_act a JOIN sae_act b USING(run_id,unit_id)
             WHERE a.run_id=? AND a.feature=? AND b.feature<>a.feature GROUP BY b.feature ORDER BY n DESC,b.feature LIMIT 10""",

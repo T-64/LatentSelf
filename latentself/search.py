@@ -16,6 +16,9 @@ from .backends.embed import Embedder, Reranker, VL, TEXT, INSTRUCTION
 from .backends.llm import LocalLLM
 
 
+from .sources import conversation_url
+
+
 def matching_turns(con, text, answers=False):
     if not text:
         return []
@@ -166,7 +169,7 @@ def _previews(con, cid, hits, terms, answers, stats):
     stats["judge_prompt_chars_omitted"] += max(0,len(first)-200) + max(0,len(evidence)-1500)
     return dict(conv_id=cid,**dict(meta),first_prompt=first,hits=len(hits),snippets=snippets,
                 omitted_snippets=max(0,len(hits)-3),images=list(dict.fromkeys(paths)),
-                url=f"https://gemini.google.com/app/{cid}"), evidence[:1500]
+                url=conversation_url(con,cid)), evidence[:1500]
 
 
 def _judge_batch(llm, query, batch):

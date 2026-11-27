@@ -6,6 +6,7 @@ import numpy as np
 from ..backends.embed import Embedder,VL
 from ..exports import export_markdown
 from ..search import read_policy
+from ..sources import conversation_url
 from ..topics import spectral_compare
 from . import features,stats
 
@@ -21,7 +22,7 @@ def search_feature(con,run,feature):
     rows = con.execute("""SELECT a.unit_id AS turn_id,a.act,a.act_z,a.argmax_tok,t.ts,t.prompt,
         (SELECT min(tc.conv_id) FROM turn_conv tc WHERE tc.turn_id=t.id) AS conv_id FROM sae_act a
         JOIN turn t ON t.id=a.unit_id WHERE a.run_id=? AND a.feature=? ORDER BY a.act DESC,a.unit_id""",(run,feature))
-    return [dict(r,url="https://gemini.google.com/app/"+r["conv_id"] if r["conv_id"] else None) for r in rows]
+    return [dict(r,url=conversation_url(con,r["conv_id"])) for r in rows]
 
 
 def unnamed(con,run):
@@ -70,7 +71,7 @@ def render(con,value,depth=2):
             parts = []
             for uid in value:
                 cid = con.execute("SELECT min(conv_id) FROM turn_conv WHERE turn_id=?",(uid,)).fetchone()[0]
-                parts.append(f"[{uid}](https://gemini.google.com/app/{cid})" if cid else str(uid))
+                parts.append(f"[{uid}]({conversation_url(con,cid)})" if cid else str(uid))
             return ", ".join(parts)
         if isinstance(value,dict):
             return ", ".join(f"{k}={v}" for k,v in value.items())

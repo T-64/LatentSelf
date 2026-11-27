@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from .evidence import content_hash
 from .exports import export_markdown
 from .fact_review import VERDICT
-from .read_api import gemini
+from .sources import conversation_url
 
 
 class ClaudeWriter:
@@ -56,7 +56,7 @@ def gather(con,reader,topic):
             prompt = turn["prompt"]
             at = max(0,prompt.casefold().find(topic.casefold())-200)
             excerpt = prompt[at:at+600]
-            rows.append(dict(turn_id=tid,conv_id=cid,date=turn["ts"],excerpt=excerpt,url=gemini(cid)))
+            rows.append(dict(turn_id=tid,conv_id=cid,date=turn["ts"],excerpt=excerpt,url=conversation_url(con,cid)))
             omitted += len(prompt)-len(excerpt)
     if not rows:
         raise ValueError("没有检索到可引用的用户原文")

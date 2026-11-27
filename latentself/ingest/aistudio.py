@@ -1,7 +1,7 @@
 """Import an AI Studio snapshot while preserving speaker, chunk order and source links."""
 from collections import Counter
 from datetime import datetime, timezone
-from hashlib import sha256
+from hashlib import file_digest, sha256
 from html import escape
 import json
 from pathlib import Path
@@ -39,6 +39,7 @@ def create_source_tables(con):
     con.execute("""CREATE TABLE IF NOT EXISTS aistudio_chunk(
         conv_id TEXT REFERENCES conversation(id), chunk_index INTEGER, role TEXT NOT NULL,
         turn_id TEXT REFERENCES turn(id), source_time TEXT, PRIMARY KEY(conv_id,chunk_index))""")
+    con.execute("CREATE INDEX IF NOT EXISTS aistudio_chunk_turn ON aistudio_chunk(turn_id,chunk_index)")
     con.execute("""CREATE TABLE IF NOT EXISTS aistudio_reference(
         turn_id TEXT REFERENCES turn(id), chunk_index INTEGER, position INTEGER, kind TEXT,
         value TEXT, PRIMARY KEY(turn_id,chunk_index,position))""")
@@ -54,7 +55,6 @@ def load_media(folder):
         if not path.is_relative_to(folder):
             raise ValueError("media path lies outside the snapshot")
         if path not in verified:
-            from hashlib import file_digest
             with path.open("rb") as stream:
                 if file_digest(stream, "sha256").hexdigest() != obj["sha256"]:
                     raise ValueError("snapshot attachment checksum mismatch")

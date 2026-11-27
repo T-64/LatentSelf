@@ -7,6 +7,7 @@ from .backends import InferenceUnavailable
 from .evidence import content_hash,original_quote
 from .exports import export_markdown
 from .facts import KINDS
+from .sources import conversation_url
 
 VERDICT = {"type":"object","additionalProperties":False,"required":["verdict"],
            "properties":{"verdict":{"enum":["supported","contradicted","insufficient"]}}}
@@ -72,7 +73,7 @@ def verify(con,llm,emit=print):
 
 def fact_line(con,fact):
     evidence = evidence_rows(con,fact["id"])
-    links = [f"[[t:{r['turn_id']}]](https://gemini.google.com/app/{r['conv_id']})" if r["conv_id"]
+    links = [f"[[t:{r['turn_id']}]]({conversation_url(con,r['conv_id'])})" if r["conv_id"]
              else f"[t:{r['turn_id']}]" for r in evidence]
     dates = "–".join(d for d in (fact["date_from"],fact["date_to"]) if d)
     return f"- {fact['text']}（{dates}，{'★'*fact['confidence']}）"+" ".join(links)

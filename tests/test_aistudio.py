@@ -38,6 +38,15 @@ class StudioIngest(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT count(*) FROM fts_turn WHERE fts_turn MATCH 'sample'").fetchone()[0],2)
         self.assertEqual(self.db.execute("SELECT count(*) FROM turn WHERE ts=''").fetchone()[0],2)
 
+    def test_read_api_keeps_original_message_order_and_link(self):
+        from latentself.read_api import Reader
+        self.row["messages"].append(dict(index=3, role="user", time=None, text="second", attachments=[]))
+        self.write([self.row])
+        ingest(self.db,self.root)
+        rows=Reader(self.root / "test.db").show_conversation("aistudio:synthetic-id")["results"]
+        self.assertEqual([r["prompt"] for r in rows],["sample phrase","second"])
+        self.assertEqual({r["url"] for r in rows},{self.row["url"]})
+
     def test_invalid_record_rolls_back_batch(self):
         self.write([self.row,dict(self.row,drive_id="../invalid")])
         with self.assertRaises(ValueError):

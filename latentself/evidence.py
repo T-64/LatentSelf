@@ -5,6 +5,7 @@ import json
 import re
 
 from .embed import DIALOGUE
+from .sources import turn_order
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class SourceTurn:
 def source_turns(con,cid):
     rows = con.execute(f"""SELECT t.id,t.ts,t.prompt,a.caption FROM turn_conv tc JOIN turn t ON t.id=tc.turn_id
         LEFT JOIN attachment a ON a.turn_id=t.id AND a.origin IS NOT 'generated' AND a.caption IS NOT NULL
-        WHERE tc.conv_id=? AND t.kind IN {DIALOGUE} ORDER BY t.ts,t.id,a.pos""",(cid,))
+        WHERE tc.conv_id=? AND t.kind IN {DIALOGUE} ORDER BY {turn_order(con,cid)},a.pos""",(cid,))
     turns = {}
     for tid,ts,prompt,caption in rows:
         if tid not in turns:

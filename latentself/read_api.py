@@ -9,6 +9,7 @@ from typing import Literal
 from .evidence import references
 from .fact_review import evidence_rows
 from .search import search as retrieve
+from .sources import conversation_url, turn_order
 
 MAX_CHARS = 20000
 
@@ -18,10 +19,6 @@ def readonly(path):
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA query_only=ON")
     return db
-
-
-def gemini(cid):
-    return "https://gemini.google.com/app/"+cid if cid else None
 
 
 def bounded(records,*,limit=None,cap=MAX_CHARS,omitted_chars=0,**metadata):
@@ -83,10 +80,10 @@ class Reader:
         with closing(readonly(self.path)) as db:
             records = []
             omitted = 0
-            for r in db.execute("""SELECT t.id AS turn_id,t.ts,t.prompt,a.text AS answer FROM turn_conv tc
+            for r in db.execute(f"""SELECT t.id AS turn_id,t.ts,t.prompt,a.text AS answer FROM turn_conv tc
                 JOIN turn t ON t.id=tc.turn_id LEFT JOIN answer a ON a.turn_id=t.id AND a.draft_idx=0
-                WHERE tc.conv_id=? ORDER BY t.ts,t.id""",(conv_id,)):
-                item = dict(r,conv_id=conv_id,url=gemini(conv_id))
+                WHERE tc.conv_id=? ORDER BY {turn_order(db,conv_id)}""",(conv_id,)):
+                item = dict(r,conv_id=conv_id,url=conversation_url(db,conv_id))
                 if item["answer"] and not full:
                     omitted += max(0,len(item["answer"])-2000)
                     item["answer"] = item["answer"][:2000]
@@ -106,7 +103,7 @@ class Reader:
             for r in found:
                 tags = json.loads(r["kinds"])
                 if not kinds or set(kinds).intersection(tags):
-                    records.append(dict(r,kinds=tags,url=gemini(r["conv_id"])))
+                    records.append(dict(r,kinds=tags,url=conversation_url(db,r["conv_id"])))
         return bounded(records)
 
     def digest(self,period:str)->dict:
@@ -119,7 +116,7 @@ class Reader:
                 for ref in sorted(references(row["body_md"])):
                     kind,key = ref.split(":",1)
                     cid = key if kind=="c" else db.execute("SELECT min(conv_id) FROM turn_conv WHERE turn_id=?",(key,)).fetchone()[0]
-                    sources.append(dict(ref=ref,conv_id=cid,url=gemini(cid)))
+                    sources.append(dict(ref=ref,conv_id=cid,url=conversation_url(db,cid)))
                 records.append(dict(row,sources=sources))
         return bounded(records)
 
@@ -131,7 +128,7 @@ class Reader:
                 ORDER BY date_from,id""",(kind,kind,query,query,active_only))
             records = []
             for r in rows:
-                evidence = [dict(turn_id=e["turn_id"],conv_id=e["conv_id"],quote=e["quote"],url=gemini(e["conv_id"]))
+                evidence = [dict(turn_id=e["turn_id"],conv_id=e["conv_id"],quote=e["quote"],url=conversation_url(db,e["conv_id"]))
                             for e in evidence_rows(db,r["id"])]
                 records.append(dict(r,evidence=evidence))
         return bounded(records)
@@ -142,7 +139,7 @@ class Reader:
             rows = db.execute("""SELECT a.id,a.turn_id,tc.conv_id,a.path,a.orig_name,a.mime,a.origin,a.caption,a.ocr,
                 a.content_kind,a.tags FROM attachment a LEFT JOIN turn_conv tc ON tc.turn_id=a.turn_id
                 WHERE a.id=? ORDER BY tc.conv_id""",(attachment_id,))
-            return bounded([dict(r,url=gemini(r["conv_id"])) for r in rows])
+            return bounded([dict(r,url=conversation_url(db,r["conv_id"])) for r in rows])
 
     def stats(self,metric:str)->dict:
         """Report availability of analysis metrics from the interpretation stage."""

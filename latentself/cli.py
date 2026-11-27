@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import config
 from .db import connect
+from .sources import conversation_url, turn_order
 
 DIALOGUE_SQL = "('prompt','branch','link_import','live','canvas')"
 
@@ -80,7 +81,7 @@ def cmd_grep(a):
             if a.images:
                 for x in con.execute("SELECT id, orig_name, path FROM attachment WHERE turn_id=? ORDER BY pos", (tid,)):
                     print(f"      [{x['id']}] {x['orig_name'] or ''} → {x['path'] or '(file not found)'}")
-        print(f"  https://gemini.google.com/app/{r['conv_id']}\n")
+        print(f"  {conversation_url(con,r['conv_id'])}\n")
 
 
 def cmd_show(a):
@@ -89,8 +90,8 @@ def cmd_show(a):
     if not c:
         sys.exit(f"unknown conversation {a.conv_id}")
     print(f"# {a.conv_id}  {c['first_ts'][:10]} → {c['last_ts'][:10]}  {c['n_turns']}轮")
-    print(f"https://gemini.google.com/app/{a.conv_id}\n")
-    for t in con.execute(f"SELECT t.* FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN {DIALOGUE_SQL} ORDER BY t.ts", (a.conv_id,)):
+    print(f"{conversation_url(con,a.conv_id)}\n")
+    for t in con.execute(f"SELECT t.* FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN {DIALOGUE_SQL} ORDER BY {turn_order(con,a.conv_id)}", (a.conv_id,)):
         print(f"── {t['ts'][:16].replace('T', ' ')} UTC  [{t['kind']}]")
         print("Q:", t["prompt"] if a.full else _clip(t["prompt"], 400))
         for x in con.execute("SELECT id, orig_name, path FROM attachment WHERE turn_id=? ORDER BY pos", (t["id"],)):
