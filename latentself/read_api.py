@@ -146,4 +146,12 @@ class Reader:
 
     def stats(self,metric:str)->dict:
         """Report availability of analysis metrics from the interpretation stage."""
-        return bounded([],available=False,notice="P3 分析结果尚未生成。")
+        from .analysis.report import analyze
+        if metric not in ("overview","timeline","profile","unnamed"):
+            return bounded([],available=False,notice="支持 overview、timeline、profile 和 unnamed。")
+        with closing(readonly(self.path)) as db:
+            try:
+                value = analyze(db,metric)
+            except ValueError as exc:
+                return bounded([],available=False,notice=str(exc))
+            return bounded(value if isinstance(value,list) else [value],available=True)

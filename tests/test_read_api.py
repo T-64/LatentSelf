@@ -41,7 +41,8 @@ class ReaderTest(unittest.TestCase):
             self.assertEqual(view.digest("2024")["results"][0]["sources"][0]["conv_id"],"c")
             self.assertEqual(view.attachment("a")["results"][0]["turn_id"],"t")
             self.assertEqual(view.facts("read")["results"][0]["evidence"][0]["quote"],"reading")
-            self.assertFalse(view.stats("overview")["available"])
+            self.assertTrue(view.stats("overview")["available"])
+            self.assertFalse(view.stats("profile")["available"])
             self.assertGreater(view.show_conversation("c")["omitted_chars"],0)
             self.assertLessEqual(len(json.dumps(view.show_conversation("c",True),ensure_ascii=False)),20000)
             with patch("latentself.read_api.retrieve",return_value={"mode":"fast","results":[{"conv_id":"c"}]}):

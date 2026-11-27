@@ -148,6 +148,18 @@ def cmd_embed(a):
 
 def cmd_search(a):
     from .search import search
+    if a.feature is not None:
+        from .analysis.report import search_feature,selected
+        con = _con()
+        rows = search_feature(con,selected(con),a.feature)
+        if a.json:
+            print(json.dumps(dict(results=rows,count=len(rows)),ensure_ascii=False))
+        else:
+            for r in rows:
+                print(f'{r["ts"]}  {r["act"]:.3f}  {r["prompt"]}\n{r["url"] or ""}')
+        return
+    if not a.query:
+        raise ValueError("supply a search query or --feature")
     result = search(_con(),a.query,mode="strict" if a.strict else "fast",images_only=a.images,
                     answers=a.answers,terms=a.terms.split(",") if a.terms is not None else None,
                     since=a.since,until=a.until,sort=a.sort)
@@ -246,6 +258,30 @@ def cmd_facts(a):
         sys.exit(1)
 
 
+def cmd_analyze(a):
+    from .analysis.report import reports
+    result = reports(_con(),config.OUT,a.metric,a.preset)
+    print(json.dumps(result,ensure_ascii=False))
+    if result["unavailable"]:
+        sys.exit(1)
+
+
+def cmd_topics(a):
+    from .analysis.report import analyze
+    from .backends.embed import VL
+    from .backends.llm import LocalLLM
+    from .search import read_policy
+    from .topics import build,name_topics
+    con = _con()
+    if a.action=="build":
+        result = build(con,read_policy(con).get("text_model",VL))
+    elif a.action=="name":
+        result = name_topics(con,LocalLLM())
+    else:
+        result = dict(timeline=analyze(con,"timeline"),clusters=analyze(con,"clusters"))
+    print(json.dumps(result,ensure_ascii=False))
+
+
 def cmd_units(a):
     from .units import units,review_paste
     con = _con()
@@ -265,6 +301,13 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("topics",help="cluster, name and compare conversation topics")
+    s.add_argument("action",choices=("build","name","report"))
+    s.set_defaults(f=cmd_topics)
+    s = sub.add_parser("analyze",help="write private calendar and interpretation reports")
+    s.add_argument("metric",choices=("overview","timeline","diff","profile","unnamed","corr","clusters","all"))
+    s.add_argument("preset",nargs="?")
+    s.set_defaults(f=cmd_analyze)
     s = sub.add_parser("units",help="build chronological episodes and inspect paste classifications")
     s.add_argument("--recompute-paste",action="store_true")
     s.add_argument("--sample-paste",type=int)
@@ -295,7 +338,8 @@ def main(argv=None):
     review.add_argument("--label",action="store_true")
     s.set_defaults(f=cmd_facts)
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
-    s.add_argument("query")
+    s.add_argument("query",nargs="?")
+    s.add_argument("--feature",type=int)
     for flag in ("strict","images","answers","json"):
         s.add_argument("--"+flag,action="store_true")
     for flag in ("terms","since","until"):
