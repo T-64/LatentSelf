@@ -3,12 +3,13 @@ from collections import Counter
 from datetime import datetime, timezone
 from hashlib import file_digest, sha256
 from html import escape
+from itertools import batched
 import json
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-from .gemini import _rebuild_fts
+from .gemini import insert_fts
 
 
 def groups(messages):
@@ -131,6 +132,6 @@ def ingest(con, folder):
                 inserted.append(insert_turn(con, cid, raw_hash, block, media, counts))
             counts["imported"] += 1
         # Each new turn has no FTS row yet. Existing sources and enrichments stay intact.
-        for tid in inserted:
-            _rebuild_fts(con, tid)
+        for batch in batched(inserted, 300):
+            insert_fts(con, batch)
     return dict(counts)

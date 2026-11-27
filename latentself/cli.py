@@ -126,7 +126,7 @@ def cmd_enrich(a):
     from .backends.llm import LocalLLM
     from .enrich import enrich
     result = enrich(_con(), LocalLLM(), do_images=a.images or not a.docs,
-                    do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors)
+                    do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors, source=a.source)
     print(json.dumps(result, ensure_ascii=False))
     if result["failed"] or result.get("interrupted"):
         sys.exit(1)
@@ -499,6 +499,7 @@ def main(argv=None):
     s = sub.add_parser("enrich", help="describe images and extract document text")
     s.add_argument("--images", action="store_true")
     s.add_argument("--docs", action="store_true")
+    s.add_argument("--source", choices=("gemini","aistudio"))
     s.add_argument("--limit", type=int)
     s.add_argument("--retry-errors", action="store_true")
     s.set_defaults(f=cmd_enrich)
