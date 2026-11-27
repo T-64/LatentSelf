@@ -49,7 +49,7 @@ snapshot="$modeldir/snapshots/$revision"
 test -s "$cache/$snapshot/config.json" || { echo "Model snapshot missing: $model" >&2; exit 1; }
 extra=()
 if [[ $role == rerank ]]; then
-    template=$(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/v0.34.0/examples/pooling/score/template/qwen3_vl_reranker.jinja)
+    template=/vllm-workspace/examples/pooling/score/template/qwen3_vl_reranker.jinja
     extra+=(--hf-overrides '{"architectures":["Qwen3VLForSequenceClassification"],"classifier_from_token":["no","yes"],"is_original_qwen3_reranker":true}' --chat-template "$template")
 fi
 docker run -d --rm --name "$name" --label "latentself.role=$role" --gpus all \
