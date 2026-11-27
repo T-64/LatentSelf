@@ -65,6 +65,37 @@ class StratifiedTest(unittest.TestCase):
         data["b","S2","gemini"]=(2,[])
         self.assertIsNone(estimate(data,{"a":set(),"b":set()})["precision"])
 
+    def test_photo_picker_saves_target_without_creating_a_label(self):
+        from io import BytesIO
+        from unittest.mock import patch, MagicMock
+        from latentself.photo_review import serve_photos
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)
+            con=connect(p/"core.db"); db=open_review(p/"review.db")
+            self.addCleanup(con.close); self.addCleanup(db.close)
+            rows=[{"q":"photo demo","photo":True}]
+            db.execute("INSERT INTO review_meta VALUES('sealed',?)",(json.dumps(rows),))
+            photo=p/"fixture.jpg"; photo.touch()
+            con.execute("INSERT INTO turn(id,source,kind,ts,prompt,snapshot) VALUES('t','aistudio','prompt','','fixture','test')")
+            con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,mime)
+                VALUES('p','t',0,'fixture.jpg',?,'exact','image/jpeg')""",(str(photo),))
+            with patch("latentself.photo_review.HTTPServer") as server, patch("webbrowser.open"), patch("secrets.token_urlsafe",return_value="demo"):
+                serve_photos(con,db,rows,emit=lambda _:None)
+            address,handler=server.call_args.args
+            self.assertEqual(address,("127.0.0.1",0))
+            def request(raw):
+                sock=MagicMock()
+                sock.makefile.return_value=BytesIO(raw)
+                handler(sock,("127.0.0.1",1),MagicMock())
+                return b"".join(call.args[0] for call in sock.sendall.call_args_list)
+            page=request(b"GET /demo/?source=aistudio HTTP/1.0\r\n\r\n")
+            self.assertIn(b"fixture.jpg",page)
+            self.assertIn(b"404",request(b"GET /unknown/ HTTP/1.0\r\n\r\n"))
+            response=request(b"POST /demo/ HTTP/1.0\r\nContent-Length: 7\r\n\r\nq=1&i=0")
+            self.assertIn(b"303",response)
+            self.assertEqual(db.execute("SELECT path FROM target").fetchone()[0],str(photo))
+            self.assertEqual(db.execute("SELECT count(*) FROM decision").fetchone()[0],0)
+
     def test_complete_frame_and_offline_metrics(self):
         with tempfile.TemporaryDirectory() as folder:
             p=Path(folder); con=connect(p/"corpus.db");db=open_review(p/"sample.db")

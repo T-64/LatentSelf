@@ -100,7 +100,10 @@ def serve_photos(con,db,rows,emit=print):
             q=fields.get("q",[""])[0]; idx=fields.get("i",[""])[0]
             if q not in queries or not idx.isdecimal() or int(idx)>=len(items):
                 return self.send_error(400)
-            set_photo(con,db,rows,int(q),items[int(idx)][0])
+            try:
+                set_photo(con,db,rows,int(q),items[int(idx)][0])
+            except ValueError:
+                return self.send_error(409,"Photo is no longer available")
             self.send_response(303); self.send_header("Location",f"/{token}/?q={q}");self.end_headers()
     with HTTPServer(("127.0.0.1",0),Handler) as server:
         url=f"http://127.0.0.1:{server.server_port}/{token}/"

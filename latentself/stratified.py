@@ -177,11 +177,11 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
                         hits[cid].update(groups[cid])
                     for tid in groups[cid]:
                         if tid in keep:
-                            if tid in values and (tid in top or tid in combined_top and model==VL or
-                                                  tau is not None and values[tid]>=tau):
+                            if model==VL or (tid in values and (tid in top or
+                                                               tau is not None and values[tid]>=tau)):
                                 routes[cid].add(model)
-                            if tid in visual and (tid in visual_top or tid in combined_top and model==VL or
-                                                  tau is not None and visual[tid]>=tau):
+                            if model==TEXT and tid in visual and (tid in visual_top or
+                                                                 tau is not None and visual[tid]>=tau):
                                 routes[cid].add(VL)
                     if not routes[cid]:
                         raise ValueError("configuration output has no retrieval provenance")
@@ -268,9 +268,11 @@ def set_photo(con,db,rows,number,path):
     check_frame(db,rows)
     if not 1<=number<=len(rows) or not rows[number-1].get("photo"):
         raise ValueError("choose a photo query number")
-    path = str(Path(path).expanduser().resolve())
-    if not Path(path).is_file() or not con.execute("""SELECT 1 FROM attachment WHERE path=?
-                AND (mime LIKE 'image/%' OR origin='live_frame')""",(path,)).fetchone():
+    path = Path(path).expanduser().absolute()
+    indexed = con.execute("""SELECT path FROM attachment WHERE path IN (?,?)
+                AND (mime LIKE 'image/%' OR origin='live_frame')
+                ORDER BY (path=?) DESC LIMIT 1""",(str(path),str(path.resolve()),str(path))).fetchone()
+    if not path.is_file() or not indexed:
         raise ValueError("target must be an available indexed photo")
     with db:
-        db.execute("INSERT INTO target VALUES(?,?) ON CONFLICT(q) DO UPDATE SET path=excluded.path",(rows[number-1]["q"],path))
+        db.execute("INSERT INTO target VALUES(?,?) ON CONFLICT(q) DO UPDATE SET path=excluded.path",(rows[number-1]["q"],indexed[0]))
