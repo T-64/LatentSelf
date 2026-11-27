@@ -170,7 +170,7 @@ def cmd_search(a):
     if not a.query:
         raise ValueError("supply a search query or --feature")
     result = search(connect_core(config.DB_PATH),a.query,mode="strict" if a.strict else "fast",images_only=a.images,
-                    answers=a.answers,terms=a.terms.split(",") if a.terms is not None else None,
+                    answers=a.answers,terms=a.terms.split(",") if a.terms is not None else None,force_expand=a.expand,
                     since=a.since,until=a.until,sort=a.sort)
     if a.json:
         print(json.dumps(result,ensure_ascii=False))
@@ -470,7 +470,7 @@ def main(argv=None):
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
     s.add_argument("query",nargs="?")
     s.add_argument("--feature",type=int)
-    for flag in ("strict","images","answers","json"):
+    for flag in ("strict","images","answers","json","expand"):
         s.add_argument("--"+flag,action="store_true")
     for flag in ("terms","since","until"):
         s.add_argument("--"+flag)

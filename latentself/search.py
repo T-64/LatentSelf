@@ -256,7 +256,7 @@ def rank_conversations(keywords,vector,memberships):
     return ranked,groups
 
 
-def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answers=False,terms=None,
+def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answers=False,terms=None,force_expand=False,
            sort="time",llm=None,indexes=None,policy=None,reranker=None,top_k=300,cap=200):
     llm = llm or LocalLLM()
     policy = read_policy(con) if policy is None else policy
@@ -276,6 +276,8 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
     if terms is None:
         key = expansion_key(llm,query)
         terms = cached(con,key)
+        if terms is None and mode == "fast" and not force_expand:
+            terms = []
     with ThreadPoolExecutor(max_workers=1) as worker:
         # Only the model request runs on the worker. SQLite stays on its opening thread.
         pending = worker.submit(request_terms,llm,query) if terms is None else None

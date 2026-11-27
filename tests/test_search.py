@@ -27,12 +27,17 @@ class SearchTest(unittest.TestCase):
 
         llm = FakeLLM(terms)
         with patch.object(self.embed,"embed_texts",side_effect=vector) as embedding:
-            first = search(self.con,"topic",llm=llm,indexes=[self.idx])
+            first = search(self.con,"topic",force_expand=True,llm=llm,indexes=[self.idx])
             again = search(self.con,"topic",llm=llm,indexes=[self.idx])
         self.assertEqual(first,again)
         self.assertTrue(first["results"])
         self.assertEqual(len(llm.calls),1)
         embedding.assert_called_once()
+
+    def test_cold_fast_does_not_call_llm(self):
+        llm = FakeLLM(lambda _: self.fail("cold fast called the LLM"))
+        search(self.con,"unknown",llm=llm,indexes=[self.idx])
+        self.assertFalse(llm.calls)
 
     def test_parallel_judgments_keep_batches_separate_and_reuse_committed_rows(self):
         from latentself.search import _judge
