@@ -13,6 +13,27 @@ from latentself.search import search,VectorIndex
 
 
 class SearchTest(unittest.TestCase):
+    def test_cold_search_overlaps_models_and_reuses_both_responses(self):
+        barrier = Barrier(2,timeout=5)
+        original_embed = self.embed.embed_texts
+
+        def terms(messages):
+            barrier.wait()
+            return {"terms":["green"]}
+
+        def vector(texts,kind):
+            barrier.wait()
+            return original_embed(texts,kind)
+
+        llm = FakeLLM(terms)
+        with patch.object(self.embed,"embed_texts",side_effect=vector) as embedding:
+            first = search(self.con,"topic",llm=llm,indexes=[self.idx])
+            again = search(self.con,"topic",llm=llm,indexes=[self.idx])
+        self.assertEqual(first,again)
+        self.assertTrue(first["results"])
+        self.assertEqual(len(llm.calls),1)
+        embedding.assert_called_once()
+
     def test_parallel_judgments_keep_batches_separate_and_reuse_committed_rows(self):
         from latentself.search import _judge
         both = Barrier(2,timeout=5)
