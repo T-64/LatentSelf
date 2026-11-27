@@ -246,9 +246,21 @@ def cmd_facts(a):
         sys.exit(1)
 
 
+def cmd_write(a):
+    from .read_api import Reader
+    from .writing import write,writer
+    backend = writer(a.llm)
+    print(json.dumps(write(_con(),Reader(config.DB_PATH),backend,config.OUT,a.topic,a.resume),ensure_ascii=False))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("write",help="build a sourced timeline, edit the outline, then verify a draft")
+    s.add_argument("topic")
+    s.add_argument("--continue",dest="resume",action="store_true")
+    s.add_argument("--llm",choices=("local","claude"),default="local")
+    s.set_defaults(f=cmd_write)
     from .mcp_server import main as mcp_main
     sub.add_parser("mcp",help="serve local read-only tools over stdio").set_defaults(f=lambda _:mcp_main())
     s = sub.add_parser("titles",help="summarize new or changed conversations")
