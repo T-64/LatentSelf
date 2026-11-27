@@ -41,7 +41,13 @@ class EnrichmentTest(unittest.TestCase):
     def test_heic_live_frame_selection_and_limit(self, run):
         read = []
         def convert(args, **kwargs):
-            read.append(Path(args[6]).read_bytes())
+            if args[1]=="-g":
+                from types import SimpleNamespace
+                width = 3000 if args[-1].endswith(".heic") else 640
+                return SimpleNamespace(stdout=f"  pixelWidth: {width}\n  pixelHeight: 480\n")
+            source = Path(args[-3])
+            self.assertEqual("-Z" in args,source.suffix==".heic")
+            read.append(source.read_bytes())
             Path(args[-1]).write_bytes(b'jpeg fixture')
         run.side_effect = convert
         self.attachment("a.heic","image/heic","generated").write_bytes(b'heic')

@@ -1,6 +1,7 @@
 """Prepare attachment images on the Mac; only resized bytes enter requests."""
 import base64
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from zipfile import ZipFile
@@ -15,7 +16,13 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["caption
 
 
 def _jpeg(source, output):
-    subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "1536", str(source), "--out", str(output)],
+    info = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(source)],
+                          check=True, capture_output=True, text=True)
+    dimensions = re.findall(r"^\s*pixel(?:Width|Height):\s*(\d+)\s*$", info.stdout, re.M)
+    if len(dimensions)!=2:
+        raise ValueError("could not read image dimensions")
+    resize = ["-Z", "1536"] if max(map(int,dimensions))>1536 else []
+    subprocess.run(["sips", "-s", "format", "jpeg", *resize, str(source), "--out", str(output)],
                    check=True, capture_output=True)
     return "data:image/jpeg;base64," + base64.b64encode(output.read_bytes()).decode("ascii")
 
