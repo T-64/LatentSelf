@@ -142,6 +142,10 @@ def report(con,db,rows,*,score_only=False,persist=False,llm=None,reranker=None):
     import time
     from .calibration import MeasuredReranker
     data = cells(db,rows)
+    missing = [str(i) for i,row in enumerate(rows,1) if row.get("photo") and not
+               db.execute("SELECT 1 FROM target WHERE q=?",(row["q"],)).fetchone()]
+    if missing:
+        raise ValueError("select the target photos with eval --photos for queries "+", ".join(missing))
     selected,comparisons = select_config(db,data,rows)
     policy = {"text_model":selected["model"]}
     if selected["threshold"] is not None:

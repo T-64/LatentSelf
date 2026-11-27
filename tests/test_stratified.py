@@ -75,6 +75,8 @@ class StratifiedTest(unittest.TestCase):
             self.addCleanup(con.close); self.addCleanup(db.close)
             rows=[{"q":"photo demo","photo":True}]
             db.execute("INSERT INTO review_meta VALUES('sealed',?)",(json.dumps(rows),))
+            with self.assertRaisesRegex(ValueError,"select the target photos"):
+                report(con,db,rows)
             photo=p/"fixture.jpg"; photo.touch()
             con.execute("INSERT INTO turn(id,source,kind,ts,prompt,snapshot) VALUES('t','aistudio','prompt','','fixture','test')")
             con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,mime)

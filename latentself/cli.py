@@ -493,7 +493,7 @@ def main(argv=None):
     group.add_argument("--photos",action="store_true",help="pick target images in the local browser")
     group.add_argument("--checklist",type=Path,help="write a private read-only HTML checklist to a new file")
     group.add_argument("--prepare",action="store_true")
-    group.add_argument("--prepare-photo-review",action="store_true",help="queue guaranteed photo keyword matches for early review")
+    group.add_argument("--prepare-photo-review",action="store_true",help="open the local target-photo picker (alias for --photos)")
     group.add_argument("--label",action="store_true")
     group.add_argument("--status",action="store_true",help="show per-source strata, owner decisions and pending counts")
     group.add_argument("--target-photo",nargs=2,metavar=("QUERY_NUMBER","FILE"),
