@@ -18,7 +18,8 @@ def sample(records,count=15000,seed=42):
         raise ValueError("sample size must be positive")
     rng = random.Random(seed)
     found = []
-    eligible = 0
+    seen = set()
+    duplicates = 0
     for item in records:
         user = next((m for m in item["conversation"] if m.get("role")=="user"),None)
         if not user or str(user.get("language","")).lower() not in ("chinese","zh","zh-cn","zh-tw"):
@@ -27,16 +28,19 @@ def sample(records,count=15000,seed=42):
         if not text.strip() or is_paste(text):
             continue
         uid = "wildchat:"+sha256(item["conversation_hash"].encode()).hexdigest()[:24]
-        eligible += 1
+        if uid in seen:
+            duplicates += 1
+            continue
+        seen.add(uid)
         if len(found)<count:
             found.append((uid,text))
         else:
-            index = rng.randrange(eligible)
+            index = rng.randrange(len(seen))
             if index<count:
                 found[index] = (uid,text)
     if len(found)!=count:
         raise ValueError(f"only {len(found)} eligible baseline units for {count} requested")
-    return sorted(found),eligible
+    return sorted(found),len(seen),duplicates
 
 
 def prepare(path,count,seed,revision=None):
@@ -58,7 +62,7 @@ def prepare(path,count,seed,revision=None):
                 for batch in parquet.iter_batches(batch_size=256,columns=["conversation_hash","conversation"]):
                     yield from batch.to_pylist()
             print(f"read shard {index+1}/{len(files)}",flush=True)
-    rows,eligible = sample(records(),count,seed)
+    rows,eligible,duplicates = sample(records(),count,seed)
     path.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
     with TemporaryDirectory(dir=path.parent) as tmp:
         staged = Path(tmp)/"sample"
@@ -67,7 +71,7 @@ def prepare(path,count,seed,revision=None):
             for uid,text in rows:
                 out.write(json.dumps(dict(id=uid,text=text,source=DATASET,revision=revision),ensure_ascii=False)+"\n")
         os.link(staged,path)
-    return dict(eligible=eligible,sample=len(rows),source=DATASET,revision=revision,seed=seed,license="ODC-BY")
+    return dict(eligible=eligible,duplicates=duplicates,sample=len(rows),source=DATASET,revision=revision,seed=seed,license="ODC-BY")
 
 
 def import_activations(con,client,run_id):

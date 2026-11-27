@@ -10,8 +10,10 @@ class BaselineTest(unittest.TestCase):
         rows.append(dict(conversation_hash="other",conversation=[dict(role="user",language="English",content="Hi"),
                          dict(role="user",language="Chinese",content="无关")]))
         rows.append(dict(conversation_hash="paste",conversation=[dict(role="user",language="Chinese",content="作者：样例")]))
-        a,total = sample(rows,6)
+        a,total,duplicates = sample(rows,6)
         self.assertEqual(total,30)
+        self.assertEqual(duplicates,0)
+        self.assertEqual(sample(rows+rows,6),(a,30,30))
         self.assertEqual(sample(rows,6)[0],a)
         self.assertNotEqual(sample(rows,6,7)[0],a)
         self.assertTrue(all(text.startswith("测试") for _,text in a))

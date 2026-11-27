@@ -37,8 +37,10 @@ test -s "$cache/$model_path/config.json"
 test -s "$cache/$sae_path/config.json"
 extra=()
 baseline=()
-if [[ -f $HOME/.cache/latentself/wildchat-zh.jsonl ]]; then
-    extra+=(-v "$HOME/.cache/latentself/wildchat-zh.jsonl:/public.jsonl:ro")
+public_file="$HOME/.cache/latentself/wildchat-zh-unique.jsonl"
+if [[ ! -f $public_file ]]; then public_file="$HOME/.cache/latentself/wildchat-zh.jsonl"; fi
+if [[ -f $public_file ]]; then
+    extra+=(-v "$public_file:/public.jsonl:ro")
     baseline+=(--baseline /public.jsonl)
 fi
 if [[ $precision == int8 ]]; then
