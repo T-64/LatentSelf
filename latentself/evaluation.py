@@ -321,15 +321,15 @@ def default_backends():
     return [Embedder(VL),Embedder(TEXT)]
 
 
-def index_pool(con,ev,rows,backend,llm):
-    from .embed import index, image_rows
+def index_pool(con,ev,rows,backend,llm,source=None):
+    from .embed import index
     seed = set()
     for row in rows:
         evaluation_vector(ev,backend,row["q"])
         for term in [row["q"], *expand(con,llm,row["q"])]:
             seed.update(matching_turns(con,term,True))
-        if row.get("photo"):
-            seed.update(r["turn_id"] for r in image_rows(con))
+    if source is not None:
+        seed.intersection_update(r[0] for r in con.execute("SELECT id FROM turn WHERE source=?",(source,)))
     if not seed:
         raise ValueError("empty comparison corpus")
     return index(con,backend,turn_ids=seed,include_images=any(r.get("photo") for r in rows),kinds=("turn",))

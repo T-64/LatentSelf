@@ -190,4 +190,10 @@ def report(con,db,rows,*,score_only=False,persist=False,llm=None,reranker=None):
     if persist:
         with con:
             con.execute("INSERT INTO meta VALUES('search_policy',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",(json.dumps(policy),))
-    return dict(selected=policy,model_comparison=comparisons,reports=reports,review=status(db,rows),bootstrap=1000)
+    for comparison in comparisons.values():
+        outputs = predictions(db,rows,comparison["config"])
+        comparison["metrics"] = breakdown(data,rows,outputs,"fast")
+    accepted = all(reports[m]["text"]["meets_text_gate"] and
+                   all(hit is True for hit in reports[m]["photo_top5"].values()) for m in ("fast",winning))
+    return dict(selected=policy,accepted=accepted,model_comparison=comparisons,reports=reports,
+                review=status(db,rows),bootstrap=1000)

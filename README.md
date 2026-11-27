@@ -68,6 +68,8 @@ scripts/server/down.sh embed
 私有查询和标注存放于 `$LATENTSELF_DATA/processed/latentself/eval/`。默认 fast 只用原词和缓存中的扩展词。`--expand` 允许冷查询主动请求扩展，`--terms` 使用指定词；strict 会并行请求扩展和查询向量。
 
 ```bash
+lself eval --index-pool Qwen/Qwen3-VL-Embedding-8B --pool-source aistudio
+lself eval --index-pool Qwen/Qwen3-Embedding-8B --pool-source aistudio
 lself eval --prepare                   # 在对齐的候选索引上冻结配置输出、候选池和人工样本
 lself eval --checklist review.html     # 独立的只读清单，须使用新文件名
 lself eval --status

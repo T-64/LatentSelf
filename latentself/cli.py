@@ -209,7 +209,7 @@ def cmd_eval(a):
     with closing(connect_core(config.DB_PATH)) as con, closing(review.open_review(path,a.queries.parent/"labels.sqlite3")) as db:
         if a.index_pool:
             backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
-            out = ev.index_pool(con,db,rows,backend,LocalLLM())
+            out = ev.index_pool(con,db,rows,backend,LocalLLM(),source=a.pool_source)
             print(json.dumps(out,ensure_ascii=False))
             if out["failed"] or out.get("interrupted"):
                 sys.exit(1)
@@ -486,6 +486,7 @@ def main(argv=None):
     s.add_argument("--queries",type=Path,default=config.DATA/"processed/latentself/eval/queries.yaml")
     group = s.add_mutually_exclusive_group()
     group.add_argument("--index-pool",choices=[VL,TEXT])
+    s.add_argument("--pool-source",choices=("gemini","aistudio"),help="limit candidate-vector updates to one source")
     s.add_argument("--review-db",type=Path,help="private stratified review database")
     s.add_argument("--carry-review",type=Path,help="retain owner decisions when preparing a fresh frame")
     s.add_argument("--batch",type=int,default=30,help="maximum decisions in this session")
