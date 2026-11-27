@@ -153,14 +153,17 @@ def serve(reader,port,baseline=None):
 
         def do_POST(self):
             url = urlparse(self.path)
-            if url.path not in ("/encode","/neighbors","/baseline"):
+            if url.path not in ("/encode","/neighbors","/baseline","/offsets"):
                 return self.send_json(404,{"error":"unknown route"})
             try:
                 length = int(self.headers["Content-Length"])
                 if not 0<length<=32*1024*1024:
                     return self.send_json(413,{"error":"request exceeds 32 MiB"})
                 payload = json.loads(self.rfile.read(length))
-                if url.path=="/baseline":
+                if url.path=="/offsets":
+                    result = [reader.tokenizer(text,return_offsets_mapping=True,add_special_tokens=True)["offset_mapping"]
+                              for text in payload["texts"]]
+                elif url.path=="/baseline":
                     if not public:
                         return self.send_json(409,{"error":"public baseline sample is unavailable"})
                     if payload.get("list"):
