@@ -60,14 +60,15 @@ def backtest(con,run,model):
     for iid in held:
         state.pop(iid,None)
     pool = candidates(con,run,model,user,state)
-    def evaluate(weights):
-        ranked = rank(pool,50,weights)
+    def evaluate(weights,*,explained=False):
+        options = [r for r in pool if any(v>0 for _,v in r["contributions"])] if explained else pool
+        ranked = rank(options,50,weights)
         return scores([r["id"] for r in ranked],held)
     baseline = {k:evaluate(w) for k,w in dict(prior=(0,0,0,1),dense=(1,0,0,0)).items()}
     params = [DEFAULT]+[tuple(x/5 for x in values) for values in product(range(6),repeat=4)
                          if sum(values)==5 and values[0] and values[1]]
     measure = lambda v:(v[1]["recall50"],v[1]["ndcg20"],v[1]["recall20"],v[1]["mrr"])
-    weights,metrics = max(((w,evaluate(w)) for w in params),key=measure)
+    weights,metrics = max(((w,evaluate(w,explained=True)) for w in params),key=measure)
     passed = all(metrics["recall50"]>value["recall50"] for value in baseline.values())
     outcome = dict(training=len(training),held=len(held),candidates=len(pool),missing_held=len(set(held)-{r["id"] for r in pool}),
                    weights=weights,metrics=metrics,baselines=baseline,grid_size=len(params),passed=passed,

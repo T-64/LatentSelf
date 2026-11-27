@@ -61,8 +61,8 @@ def measure(con,client,llm,run,features,seed=42,emit=print):
             summary["scores"].append(old[1])
             summary["skipped"] += 1
             continue
-        active = dict(con.execute("""SELECT unit_id,argmax_tok FROM sae_act WHERE run_id=? AND feature=?
-                                     AND act>0 ORDER BY act DESC,unit_id""",(run,f)))
+        active = dict(con.execute("""SELECT a.unit_id,a.argmax_tok FROM sae_act a JOIN sae_unit s USING(run_id,unit_id)
+                                     WHERE a.run_id=? AND a.feature=? AND a.act>0 ORDER BY a.act DESC,a.unit_id""",(run,f)))
         best,random_pos,neg,held = split_examples(active,ids-active.keys(),seed+f)
         rng = random.Random(seed+f)
         wanted = dict.fromkeys(best+random_pos+neg+[uid for uid,_ in held])

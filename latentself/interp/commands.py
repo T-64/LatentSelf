@@ -46,8 +46,8 @@ def dispatch(con,out,args):
         if not (result["limited"] or result["failed"] or result.get("interrupted")):
             result["normalization"] = standardize(con,rid)
         return result
-    candidates = [r[0] for r in con.execute("""SELECT feature FROM sae_act WHERE run_id=?
-        AND act>0 GROUP BY feature HAVING count(*)>=5 ORDER BY feature""",(run_id,))]
+    candidates = [r[0] for r in con.execute("""SELECT a.feature FROM sae_act a JOIN sae_unit s USING(run_id,unit_id)
+        WHERE a.run_id=? AND a.act>0 GROUP BY a.feature HAVING count(*)>=5 ORDER BY a.feature""",(run_id,))]
     limit = args.limit
     if limit is not None:
         done = {r[0] for r in con.execute("SELECT feature FROM feature WHERE run_id=? AND detect_score IS NOT NULL",(run_id,))}
