@@ -23,7 +23,11 @@ def normalize(vectors):
 class Embedder:
     def __init__(self, model=VL, url=None):
         self.model = model
-        self.url = (url or os.environ.get("LATENTSELF_EMBED_URL", "http://127.0.0.1:8001/v1")).rstrip("/")
+        if model == TEXT:
+            default = os.environ.get("LATENTSELF_TEXT_EMBED_URL", "http://127.0.0.1:8003/v1")
+        else:
+            default = os.environ.get("LATENTSELF_EMBED_URL", "http://127.0.0.1:8001/v1")
+        self.url = (url or default).rstrip("/")
         self.multimodal = model == VL
 
     def _request(self, **fields):

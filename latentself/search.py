@@ -95,8 +95,7 @@ def read_policy(con):
 def configured_indexes(con, policy, *, visual=None, text=None):
     visual = visual or Embedder(VL)
     if policy.get("text_model") == TEXT:
-        import os
-        text = text or Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1"))
+        text = text or Embedder(TEXT)
         return [VectorIndex(con,text,("turn",)), VectorIndex(con,visual,("attachment",))]
     return [VectorIndex(con,visual,("turn","attachment"))]
 

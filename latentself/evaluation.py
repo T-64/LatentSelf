@@ -253,8 +253,7 @@ def extend_pool(con,ev,rows):
 
 
 def default_backends():
-    import os
-    return [Embedder(VL),Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1"))]
+    return [Embedder(VL),Embedder(TEXT)]
 
 
 def index_pool(con,ev,rows,backend,llm):

@@ -1,6 +1,7 @@
 import base64
 from http.client import IncompleteRead
 import io
+import os
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -13,6 +14,13 @@ from latentself.backends.llm import LocalLLM
 
 
 class BackendTest(unittest.TestCase):
+    def test_explicit_model_uses_its_own_ssh_forward(self):
+        with patch.dict(os.environ,{"LATENTSELF_EMBED_URL":"http://127.0.0.1:19001/v1",
+                                    "LATENTSELF_TEXT_EMBED_URL":"http://127.0.0.1:19003/v1"}):
+            self.assertEqual(Embedder(VL).url,"http://127.0.0.1:19001/v1")
+            self.assertEqual(Embedder(TEXT).url,"http://127.0.0.1:19003/v1")
+            self.assertEqual(Embedder(TEXT,"http://127.0.0.1:19103/v1/").url,"http://127.0.0.1:19103/v1")
+
     @patch("latentself.backends.sleep")
     @patch("latentself.backends.build_opener")
     def test_read_timeouts_and_temporary_service_errors_leave_inputs_pending(self, build, sleep):
