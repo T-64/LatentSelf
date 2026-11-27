@@ -65,6 +65,18 @@ def prepare(con, ev, rows, backends, llm=None):
     indices = [VectorIndex(con,b,("turn",)) for b in backends]
     if any(not idx.ids for idx in indices) or set(indices[0].ids)!=set(indices[1].ids):
         raise ValueError("index the same evaluation turns with both candidate models first")
+    mismatch = con.execute("""SELECT 1 FROM embedding a JOIN embedding b USING (item_kind,item_id)
+        WHERE a.item_kind='turn' AND a.model=? AND b.model=? AND a.input_hash<>b.input_hash
+        LIMIT 1""",(VL,TEXT)).fetchone()
+    if mismatch:
+        raise ValueError("evaluation text changed between model runs; rerun both comparison indexes")
+    if any(r.get("photo") for r in rows):
+        missing = con.execute("""SELECT count(*) FROM attachment a
+            WHERE a.path IS NOT NULL AND (a.mime LIKE 'image/%' OR a.origin='live_frame')
+            AND NOT EXISTS (SELECT 1 FROM embedding e WHERE e.item_kind='attachment'
+                AND e.item_id=a.id AND e.model=?)""",(VL,)).fetchone()[0]
+        if missing:
+            raise ValueError(f"photo evaluation requires {missing} more visual attachment embeddings")
     coverage = set(indices[0].ids)
     from .embed import image_rows
     photo_turns = {r["turn_id"] for r in image_rows(con)}

@@ -58,6 +58,19 @@ class CalibrationTest(unittest.TestCase):
             rows = [{"q":"fixture"}]
             ev = evaluation_db(root/"labels.db")
             self.addCleanup(ev.close)
+            with patch.dict(rows[0],photo=True):
+                con.execute("SAVEPOINT without_photo")
+                con.execute("DELETE FROM embedding WHERE item_kind='attachment'")
+                with self.assertRaisesRegex(ValueError,"1 more visual"):
+                    list(prepare(con,ev,rows,backends,llm))
+                con.execute("ROLLBACK TO without_photo")
+                con.execute("RELEASE without_photo")
+            con.execute("SAVEPOINT stale_text")
+            con.execute("UPDATE embedding SET input_hash='outdated' WHERE item_kind='turn' AND model=?",(TEXT,))
+            with self.assertRaisesRegex(ValueError,"changed between model runs"):
+                list(prepare(con,ev,rows,backends,llm))
+            con.execute("ROLLBACK TO stale_text")
+            con.execute("RELEASE stale_text")
             summary = list(prepare(con,ev,rows,backends,llm))[0]
             self.assertEqual((summary["candidates"],summary["consensus_labels"],summary["pending_owner_labels"]),(2,1,1))
             with self.assertRaisesRegex(ValueError,"owner review"):
