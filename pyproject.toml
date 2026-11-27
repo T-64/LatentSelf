@@ -3,7 +3,7 @@ name = "latentself"
 version = "0.2.0"
 description = "Local personal data base over AI chat history: search, profile, recommendation, writing"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["numpy"]
 
 [project.scripts]
 lself = "latentself.cli:main"
