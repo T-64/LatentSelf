@@ -3,6 +3,10 @@ import os
 from . import post
 
 
+class OutputLimitExceeded(ValueError):
+    """The inference server stopped before returning a complete response."""
+
+
 class LocalLLM:
     def __init__(self):
         if os.environ.get("LATENTSELF_LLM", "local") != "local":
@@ -26,6 +30,6 @@ class LocalLLM:
                                           "json_schema": {"name": "result", "schema": json_schema}}
         choice = post(self.url + "/chat/completions", payload, timeout=300)["choices"][0]
         if choice.get("finish_reason") == "length":
-            raise ValueError(f"incomplete model response: output or context limit reached (max_tokens={max_tokens})")
+            raise OutputLimitExceeded(f"incomplete model response: output or context limit reached (max_tokens={max_tokens})")
         result = choice["message"]["content"]
         return json.loads(result) if json_schema else result

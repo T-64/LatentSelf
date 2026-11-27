@@ -1,14 +1,27 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock
 
 from latentself.db import connect
-from latentself.digests import SECTIONS,digests,reduce_material
+from latentself.backends.llm import OutputLimitExceeded
+from latentself.digests import SECTIONS,digests,reduce_material,summarize
 from latentself.evidence import references
 from tests.fakes import FakeLLM
 
 
 class DigestTest(unittest.TestCase):
+    def test_retry_incomplete_digest_and_restore_citations_from_the_complete_response(self):
+        llm = Mock()
+        reply = {s:[] for s in SECTIONS}
+        reply["事件"] = ["有据记录 [c:1]"]
+        llm.chat.side_effect = [OutputLimitExceeded(),reply]
+        stats = dict(invalid_citations=0,uncited_points=0)
+        body = summarize(llm,"2024",["第一条 [c:original]"],{"c:original"},stats)
+        self.assertEqual(references(body),{"c:original"})
+        self.assertEqual([c.kwargs["max_tokens"] for c in llm.chat.call_args_list],[2048,4096])
+        self.assertEqual(stats["output_limit_retries"],1)
+
     def test_oversized_month_uses_weekly_sources(self):
         def answer(messages):
             refs = references(messages[-1]["content"])
