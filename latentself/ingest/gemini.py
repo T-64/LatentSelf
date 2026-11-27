@@ -206,7 +206,8 @@ def _merge_attachments(con, turn_ids, attachments):
     con.executemany("""INSERT INTO attachment
         (id,turn_id,pos,orig_name,stored_name,path,match,mime,origin) VALUES (?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET orig_name=excluded.orig_name, path=excluded.path,
-        match=excluded.match, mime=excluded.mime, origin=excluded.origin""", attachments)
+        match=excluded.match, mime=excluded.mime,
+        origin=CASE WHEN attachment.origin='live_frame' THEN attachment.origin ELSE excluded.origin END""", attachments)
     con.execute("DROP TABLE incoming_file")
 
 
@@ -246,8 +247,9 @@ def _rebuild_conversations(con):
         n_turns=excluded.n_turns""", (SOURCE, SOURCE))
 
 
-def _rebuild_fts(con):
-    con.execute("DELETE FROM fts_turn")
+def _rebuild_fts(con, turn_id=None):
+    params = () if turn_id is None else (turn_id,)
+    con.execute("DELETE FROM fts_turn" + (" WHERE turn_id=?" if params else ""), params)
     con.execute("""
         INSERT INTO fts_turn (turn_id, prompt, answer, extra)
         SELECT t.id, t.prompt,
@@ -256,4 +258,5 @@ def _rebuild_fts(con):
                          FROM attachment x WHERE x.turn_id=t.id), '')
                || COALESCE((SELECT ' ' || c.title || ' ' || c.content FROM canvas c WHERE c.turn_id=t.id), '')
         FROM turn t
-        WHERE t.kind IN ('prompt','branch','link_import','live','canvas')""")
+        WHERE t.kind IN ('prompt','branch','link_import','live','canvas')"""
+        + (" AND t.id=?" if params else ""), params)

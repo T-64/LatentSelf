@@ -118,9 +118,25 @@ def _clip(s, n):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def cmd_enrich(a):
+    from .backends.llm import LocalLLM
+    from .enrich import enrich
+    result = enrich(_con(), LocalLLM(), do_images=a.images or not a.docs,
+                    do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors)
+    print(json.dumps(result, ensure_ascii=False))
+    if result["failed"]:
+        sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("enrich", help="describe images and extract document text")
+    s.add_argument("--images", action="store_true")
+    s.add_argument("--docs", action="store_true")
+    s.add_argument("--limit", type=int)
+    s.add_argument("--retry-errors", action="store_true")
+    s.set_defaults(f=cmd_enrich)
     s = sub.add_parser("ingest"); s.add_argument("--snapshot"); s.set_defaults(f=cmd_ingest)
     s = sub.add_parser("stats"); s.set_defaults(f=cmd_stats)
     s = sub.add_parser("grep"); s.add_argument("text"); s.add_argument("--answers", action="store_true", help="also search Gemini's answers")
