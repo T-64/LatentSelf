@@ -18,11 +18,13 @@ class LabelTest(unittest.TestCase):
             bundle = dict(training=dict(strong=["x"],random_active=[],inactive=["y"]),held=[("a",True),("b",False)])
             with patch("latentself.interp.label.prepare_examples",return_value=bundle) as reader:
                 self.assertEqual(measure(db,None,llm,run,[7],stage="prepare")["prepared"],1)
+                stats = measure(db,None,llm,run,[7,8,9],stage="prepare",limit=1)
+                self.assertEqual((stats["skipped"],stats["prepared"],stats["limited"]),(1,1,1))
                 llm.chat.assert_not_called()
                 llm.chat.side_effect = [dict(label="标签",note="说明"),dict(active=[True,False])]
                 self.assertEqual(measure(db,None,llm,run,[7],stage="score")["scores"],[1.0])
                 self.assertEqual(measure(db,None,llm,run,[7],stage="score")["skipped"],1)
-                reader.assert_called_once()
+                self.assertEqual(reader.call_count,2)
 
     def test_no_holdout_reuse_balanced_scoring_and_exact_span(self):
         for n in (5,30,50):

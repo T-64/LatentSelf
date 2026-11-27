@@ -68,7 +68,7 @@ def prepare_examples(con,client,run,f,seed,ids,material,offsets):
     return dict(training=training,held=[(excerpt(u,False),truth) for u,truth in held])
 
 
-def measure(con,client,llm,run,features,seed=42,emit=print,stage="both"):
+def measure(con,client,llm,run,features,seed=42,emit=print,stage="both",limit=None):
     runrow = con.execute("SELECT unit_kind FROM sae_run WHERE id=?",(run,)).fetchone()
     if not runrow or runrow[0]!="turn_self":
         raise ValueError("feature labels require a personal turn_self run")
@@ -77,7 +77,7 @@ def measure(con,client,llm,run,features,seed=42,emit=print,stage="both"):
     ids = set(hashes)
     corpus = content_hash(hashes,seed)
     offsets = {}
-    summary = dict(prepared=0,labeled=0,skipped=0,limited_training=0,limited_validation=0,unscorable=0,scores=[])
+    summary = dict(prepared=0,labeled=0,skipped=0,limited=0,limited_training=0,limited_validation=0,unscorable=0,scores=[])
     for f in features:
         key = f"feature_examples:{run}:{f}"
         cached = con.execute("SELECT v FROM meta WHERE k=?",(key,)).fetchone()
@@ -87,6 +87,12 @@ def measure(con,client,llm,run,features,seed=42,emit=print,stage="both"):
         if fresh and payload.get("scored_by")==llm.model and old and old[0] and old[1] is not None:
             summary["scores"].append(old[1])
             summary["skipped"] += 1
+            continue
+        if fresh and stage=="prepare":
+            summary["skipped"] += 1
+            continue
+        if limit is not None and summary["prepared"]>=limit:
+            summary["limited"] += 1
             continue
         if not fresh:
             if stage=="score":

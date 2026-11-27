@@ -48,10 +48,4 @@ def dispatch(con,out,args):
         return result
     candidates = [r[0] for r in con.execute("""SELECT feature FROM sae_act WHERE run_id=?
         AND act>0 GROUP BY feature HAVING count(*)>=5 ORDER BY feature""",(run_id,))]
-    limit = args.limit
-    if limit is not None:
-        done = {r[0] for r in con.execute("SELECT feature FROM feature WHERE run_id=? AND detect_score IS NOT NULL",(run_id,))}
-        candidates = [f for f in candidates if f not in done]
-    result = measure(con,client,LocalLLM(),run_id,candidates[:limit],stage=args.stage)
-    result["limited"] = max(0,len(candidates)-limit) if limit is not None else 0
-    return result
+    return measure(con,client,LocalLLM(),run_id,candidates,stage=args.stage,limit=args.limit)
