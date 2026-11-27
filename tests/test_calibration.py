@@ -71,7 +71,16 @@ class CalibrationTest(unittest.TestCase):
                 list(prepare(con,ev,rows,backends,llm))
             con.execute("ROLLBACK TO stale_text")
             con.execute("RELEASE stale_text")
-            summary = list(prepare(con,ev,rows,backends,llm))[0]
+            # Make the unrelated fixture a single-route candidate in this tiny corpus.
+            original_recall = VectorIndex.recall
+            def one_disagreement(idx,*args):
+                scores,omitted = original_recall(idx,*args)
+                if idx.backend.model==TEXT and other in scores:
+                    del scores[other]
+                    omitted += 1
+                return scores,omitted
+            with patch.object(VectorIndex,"recall",one_disagreement):
+                summary = list(prepare(con,ev,rows,backends,llm))[0]
             self.assertEqual((summary["candidates"],summary["consensus_labels"],summary["pending_owner_labels"]),(2,1,1))
             with self.assertRaisesRegex(ValueError,"owner review"):
                 calibrate(con,ev,rows,backends,llm,Reranker())
@@ -104,6 +113,12 @@ class CalibrationTest(unittest.TestCase):
                 return value
             revised = FakeLLM(disagree)
             revised.model = "another-fixture-judge"
+            # Both retrievers still vote for the same fixture despite a changed strict verdict.
             revised_pool = list(prepare(con,ev,rows,backends,revised))[0]
+            self.assertEqual((revised_pool["consensus_labels"],revised_pool["pending_owner_labels"]),(1,0))
+            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{"aa":1,"bb":0})
+            # After recall changes, only the keyword route remains for the former consensus.
+            with patch.object(VectorIndex,"recall",return_value=({},2)):
+                revised_pool = list(prepare(con,ev,rows,backends,revised))[0]
             self.assertEqual((revised_pool["consensus_labels"],revised_pool["pending_owner_labels"]),(0,1))
             self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{"bb":0})

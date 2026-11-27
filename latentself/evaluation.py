@@ -115,7 +115,7 @@ def prepare(con, ev, rows, backends, llm=None):
                 if judgments[cid]["relevant"]:
                     routes[cid].add("strict")
                 ev.execute("INSERT INTO pool VALUES (?,?,?,?)",(query,cid,json.dumps(sorted(routes[cid])),excerpt))
-                if routes[cid] == {"keyword",TEXT,VL,"strict"} and not row.get("photo"):
+                if len(routes[cid]) >= 2 and not row.get("photo"):
                     inserted = ev.execute("INSERT OR IGNORE INTO label VALUES (?,?,1,NULL)",(query,cid)).rowcount
                     if inserted:
                         ev.execute("INSERT INTO consensus_label VALUES (?,?)",(query,cid))
