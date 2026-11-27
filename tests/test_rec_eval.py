@@ -5,12 +5,20 @@ import numpy as np
 
 from latentself.catalog import dumps
 from latentself.db import connect
-from latentself.rec_eval import scores,split
+from latentself.rec_eval import baseline_scores,scores,split
 from latentself.rec_output import valid_sentence
 from latentself.recommend import feedback_factors,ranked_items
 
 
 class RecommendationEvaluationTest(unittest.TestCase):
+    def test_baselines_sort_by_their_single_score_and_break_ties_by_id(self):
+        films = [dict(id="b",components=(1,0,0,.1)),dict(id="a",components=(1,0,0,.5)),
+                 dict(id="held",components=(0,0,0,1))]
+        results = baseline_scores(films,["held"])
+        self.assertEqual(results["prior"]["mrr"],1)
+        self.assertEqual(results["dense"]["mrr"],1/3)
+        self.assertEqual(baseline_scores(films,["b"])["dense"]["mrr"],.5)
+
     def test_first_hit_after_rank_fifty_contributes_only_to_reciprocal_rank(self):
         films = [dict(id=str(i),components=(70-i,0,0,0),wanted=False,creators=[],vec=np.array([1.]))
                  for i in range(70)]

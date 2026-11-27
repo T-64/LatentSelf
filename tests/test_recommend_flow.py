@@ -9,6 +9,7 @@ from latentself.db import connect
 from latentself.film_state import feedback
 from latentself.interp.encode import store_unit
 from latentself.interp.experiment import register
+from latentself.rec_eval import BACKTEST_VERSION
 from latentself.rec_output import recommend
 from latentself.recommend import representations,taste
 
@@ -46,10 +47,14 @@ class RecommendationFlowTest(unittest.TestCase):
             self.assertIn(7,taste(con,run,"embed")["weights"])
             with self.assertRaisesRegex(ValueError,"backtest"):
                 recommend(con,llm,run,"embed",root,3)
+            report = dict(passed=True,model="embed",profile_run=run,weights=[.4,.4,.1,.1])
+            with con:
+                con.execute("INSERT INTO meta VALUES ('rec_backtest',?)",(dumps(report),))
+            with self.assertRaisesRegex(ValueError,"backtest"):
+                recommend(con,llm,run,"embed",root,3)
             # Exercise publication separately from the measured quality gate.
             with con:
-                con.execute("INSERT INTO meta VALUES ('rec_backtest',?)",(dumps(dict(passed=True,model="embed",
-                    profile_run=run,weights=[.4,.4,.1,.1])),))
+                con.execute("UPDATE meta SET v=? WHERE k='rec_backtest'",(dumps(dict(report,version=BACKTEST_VERSION)),))
             llm.chat.return_value = "你曾写过“阅读电影评论”。"
             first = recommend(con,llm,run,"embed",root,3)
             self.assertEqual(first["returned"],3)

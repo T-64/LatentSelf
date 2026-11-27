@@ -8,6 +8,8 @@ from .film_state import mention_table
 from .recommend import DEFAULT,candidates,ranked_items,taste
 from .units import instant
 
+BACKTEST_VERSION = 2
+
 
 def split(positive):
     ordered = sorted(positive,key=lambda p:(instant(p[1]),p[0]))
@@ -52,6 +54,14 @@ def scores(order,positive):
                 ndcg20=dcg/ideal,mrr=1/min(ranks) if ranks else 0.)
 
 
+def baseline_scores(pool,held):
+    result = {}
+    for name,component in (("prior",3),("dense",0)):
+        ordered = sorted(pool,key=lambda r:(-r["components"][component],r["id"]))
+        result[name] = scores((r["id"] for r in ordered),held)
+    return result
+
+
 def backtest(con,run,model):
     mention_table(con)
     positive = {}
@@ -65,19 +75,20 @@ def backtest(con,run,model):
     for iid in held:
         state.pop(iid,None)
     pool = candidates(con,run,model,user,state)
-    def evaluate(weights,*,explained=False):
-        options = [r for r in pool if any(v>0 for _,v in r["contributions"])] if explained else pool
-        order = (r["id"] for r in ranked_items(options,weights))
+    baseline = baseline_scores(pool,held)
+    options = [r for r in pool if any(v>0 for _,v in r["contributions"])]
+    has_holdout = not set(held).isdisjoint(r["id"] for r in options)
+    def evaluate(weights):
+        order = (r["id"] for r in ranked_items(options,weights)) if has_holdout else ()
         return scores(order,held)
-    baseline = {k:evaluate(w) for k,w in dict(prior=(0,0,0,1),dense=(1,0,0,0)).items()}
     params = [DEFAULT]+[tuple(x/5 for x in values) for values in product(range(6),repeat=4)
                          if sum(values)==5 and values[0] and values[1]]
     measure = lambda v:(v[1]["recall50"],v[1]["ndcg20"],v[1]["recall20"],v[1]["mrr"])
-    weights,metrics = max(((w,evaluate(w,explained=True)) for w in params),key=measure)
+    weights,metrics = max(((w,evaluate(w)) for w in params),key=measure)
     passed = all(metrics["recall50"]>value["recall50"] for value in baseline.values())
     outcome = dict(training=len(training),held=len(held),candidates=len(pool),missing_held=len(set(held)-{r["id"] for r in pool}),
                    weights=weights,metrics=metrics,baselines=baseline,grid_size=len(params),passed=passed,
-                   model=model,profile_run=run,selection="grid evaluated on the chronological holdout")
+                   model=model,profile_run=run,version=BACKTEST_VERSION,selection="grid evaluated on the chronological holdout")
     with con:
         con.execute("INSERT OR REPLACE INTO meta VALUES ('rec_backtest',?)",(dumps(outcome),))
     return outcome

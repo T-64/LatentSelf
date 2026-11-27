@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from .catalog import dumps
 from .exports import export_markdown
+from .rec_eval import BACKTEST_VERSION
 from .recommend import candidates,rank,taste
 
 
@@ -53,7 +54,7 @@ def explanation(con,llm,run,row,profile,out):
 def recommend(con,llm,run,model,out,n=20):
     saved = con.execute("SELECT v FROM meta WHERE k='rec_backtest'").fetchone()
     config = json.loads(saved[0]) if saved else {}
-    if not config.get("passed") or config["model"]!=model or config["profile_run"]!=run:
+    if config.get("version")!=BACKTEST_VERSION or not config.get("passed") or config["model"]!=model or config["profile_run"]!=run:
         raise ValueError("recommendations require a matching backtest beating both Recall@50 baselines")
     user = taste(con,run,model)
     states = dict(con.execute("SELECT item_id,status FROM item_state"))
