@@ -105,14 +105,20 @@ def prepare(con, ev, rows, backends, llm=None):
                     routes[cid].add(source)
         excerpts = {cid:_previews(con,cid,turns,terms,True,counts)[1]
                     for cid,turns in hits.items()}
-        judgments = _judge(con,llm,query,excerpts,{},Reranker())
+        # Strict can add one vote to a retrieved conversation. Only a single-route
+        # text match can change review status. Owners identify the actual photo.
+        undecided = {cid:excerpt for cid,excerpt in excerpts.items()
+                     if not row.get("photo") and len(routes[cid])==1}
+        judgments = _judge(con,llm,query,undecided,{},Reranker())
+        counts["strict_candidates"] = len(undecided)
+        counts["strict_unneeded"] = len(excerpts)-len(undecided)
         with ev:
             ev.execute("""DELETE FROM label WHERE q=? AND cid IN
                           (SELECT cid FROM consensus_label WHERE q=?)""",(query,query))
             ev.execute("DELETE FROM consensus_label WHERE q=?",(query,))
             ev.execute("DELETE FROM pool WHERE q=?",(query,))
             for cid,excerpt in excerpts.items():
-                if judgments[cid]["relevant"]:
+                if cid in judgments and judgments[cid]["relevant"]:
                     routes[cid].add("strict")
                 ev.execute("INSERT INTO pool VALUES (?,?,?,?)",(query,cid,json.dumps(sorted(routes[cid])),excerpt))
                 if len(routes[cid]) >= 2 and not row.get("photo"):

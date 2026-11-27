@@ -82,6 +82,7 @@ class CalibrationTest(unittest.TestCase):
             with patch.object(VectorIndex,"recall",one_disagreement):
                 summary = list(prepare(con,ev,rows,backends,llm))[0]
             self.assertEqual((summary["candidates"],summary["consensus_labels"],summary["pending_owner_labels"]),(2,1,1))
+            self.assertEqual((summary["strict_candidates"],summary["strict_unneeded"]),(1,1))
             with self.assertRaisesRegex(ValueError,"owner review"):
                 calibrate(con,ev,rows,backends,llm,Reranker())
             ev.execute("INSERT INTO label VALUES ('fixture','bb',0,NULL)")
@@ -106,6 +107,8 @@ class CalibrationTest(unittest.TestCase):
             policy = {**result["selected"],"judge":"llm"}
             report = list(evaluate(con,ev,rows,indexes=[VectorIndex(con,backends[0],("turn",))],policy=policy,llm=llm))
             self.assertEqual([r["accepted"] for r in report],[True,True])
+            photo = list(prepare(con,ev,[{"q":"photo fixture","photo":True}],backends,llm))[0]
+            self.assertEqual((photo["strict_candidates"],photo["pending_owner_labels"],photo["strict_unneeded"]),(0,1,1))
             def disagree(messages):
                 value = reply(messages)
                 for item in value.get("results",[]):
@@ -116,7 +119,7 @@ class CalibrationTest(unittest.TestCase):
             # Both retrievers still vote for the same fixture despite a changed strict verdict.
             revised_pool = list(prepare(con,ev,rows,backends,revised))[0]
             self.assertEqual((revised_pool["consensus_labels"],revised_pool["pending_owner_labels"]),(1,0))
-            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{"aa":1,"bb":0})
+            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label WHERE q='fixture'")),{"aa":1,"bb":0})
             # After recall changes, only the keyword route remains for the former consensus.
             with patch.object(VectorIndex,"recall",return_value=({},2)):
                 revised_pool = list(prepare(con,ev,rows,backends,revised))[0]
