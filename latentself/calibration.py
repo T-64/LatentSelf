@@ -9,7 +9,7 @@ import numpy as np
 
 from .backends.embed import VL, TEXT, Reranker
 from .backends.llm import LocalLLM
-from .evaluation import default_backends
+from .evaluation import default_backends, evaluation_vector
 from .search import VectorIndex, _judge, _previews, expand, matching_turns, rank_conversations
 
 
@@ -83,7 +83,7 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None):
             eligible = image_turns if row.get("photo") else set(idx.ids)
             terms = [query,*expand(con,llm,query)]
             keywords = Counter(tid for t in dict.fromkeys(terms) for tid in matching_turns(con,t) if tid in eligible)
-            scores = idx.scores(query,eligible)
+            scores = idx.scores(query,eligible,evaluation_vector(ev,backend,query))
             top = set(sorted(scores,key=lambda tid:(-scores[tid],tid))[:300])
             samples.append(dict(query=query,gold=gold,terms=terms,keywords=keywords,scores=scores,top=top))
             times.append(time.monotonic()-start)

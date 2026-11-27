@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import time
+import numpy as np
 
 from .backends.embed import Embedder, TEXT, VL
 from .backends.llm import LocalLLM
@@ -32,8 +33,22 @@ def evaluation_db(path):
             q TEXT, cid TEXT, routes TEXT NOT NULL, excerpt TEXT NOT NULL, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS label (
             q TEXT, cid TEXT, relevant INTEGER NOT NULL, photo TEXT, PRIMARY KEY(q,cid));
+        CREATE TABLE IF NOT EXISTS query_vector (
+            model TEXT, q TEXT, instruction TEXT, vec BLOB NOT NULL, PRIMARY KEY(model,q,instruction));
     """)
     return con
+
+
+def evaluation_vector(ev,backend,query):
+    from .backends.embed import INSTRUCTION
+    key = (backend.model,query,INSTRUCTION)
+    row = ev.execute("SELECT vec FROM query_vector WHERE model=? AND q=? AND instruction=?",key).fetchone()
+    if row:
+        return np.frombuffer(row[0],dtype="<f4")
+    vector = np.asarray(backend.embed_texts([query],kind="query")[0],dtype="<f4")
+    with ev:
+        ev.execute("INSERT OR IGNORE INTO query_vector VALUES (?,?,?,?)",(*key,vector.tobytes()))
+    return vector
 
 
 def prepare(con, ev, rows, backends, llm=None):
@@ -52,7 +67,7 @@ def prepare(con, ev, rows, backends, llm=None):
         terms = list(dict.fromkeys([query,*expand(con,llm,query)]))
         sources = {"keyword":set().union(*(set(matching_turns(con,t,True)) for t in terms))}
         for idx in indices:
-            scores,_ = idx.recall(query,coverage,None,300)
+            scores,_ = idx.recall(query,coverage,None,300,evaluation_vector(ev,idx.backend,query))
             sources[idx.backend.model] = set(scores)
         hits,routes = defaultdict(dict),defaultdict(set)
         for source,tids in sources.items():
@@ -169,10 +184,11 @@ def default_backends():
     return [Embedder(VL),Embedder(TEXT,os.environ.get("LATENTSELF_TEXT_EMBED_URL","http://127.0.0.1:8003/v1"))]
 
 
-def index_pool(con,rows,backend,llm):
+def index_pool(con,ev,rows,backend,llm):
     from .embed import index, image_rows
     seed = set()
     for row in rows:
+        evaluation_vector(ev,backend,row["q"])
         for term in [row["q"], *expand(con,llm,row["q"])]:
             seed.update(matching_turns(con,term,True))
         if row.get("photo"):

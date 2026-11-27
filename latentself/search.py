@@ -68,10 +68,10 @@ class VectorIndex:
         self.ids = ids
         self.vectors = np.asarray(vectors,dtype=np.float32)
 
-    def scores(self, query, eligible):
+    def scores(self, query, eligible, query_vector=None):
         if not self.ids:
             return {}
-        q = self.backend.embed_texts([query],kind="query")[0]
+        q = self.backend.embed_texts([query],kind="query")[0] if query_vector is None else query_vector
         scores = self.vectors @ q
         best = {}
         for tid,score in zip(self.ids,scores,strict=True):
@@ -79,8 +79,8 @@ class VectorIndex:
                 best[tid] = max(float(score),best.get(tid,-1.0))
         return best
 
-    def recall(self, query, eligible, threshold, k):
-        best = self.scores(query,eligible)
+    def recall(self, query, eligible, threshold, k, query_vector=None):
+        best = self.scores(query,eligible,query_vector)
         ordered = sorted(best.items(),key=lambda x:(-x[1],x[0]))
         kept = {tid:s for i,(tid,s) in enumerate(ordered) if i < k or (threshold is not None and s>=threshold)}
         return kept,len(best)-len(kept)

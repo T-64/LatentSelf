@@ -177,7 +177,7 @@ def cmd_eval(a):
     labels = ev.evaluation_db(a.queries.parent / "labels.sqlite3")
     if a.index_pool:
         backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
-        out = ev.index_pool(con,rows,backend,LocalLLM())
+        out = ev.index_pool(con,labels,rows,backend,LocalLLM())
         print(json.dumps(out,ensure_ascii=False))
         if out["failed"]:
             sys.exit(1)

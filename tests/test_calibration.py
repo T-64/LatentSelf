@@ -53,7 +53,9 @@ class CalibrationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"owner review"):
                 calibrate(con,ev,rows,backends,llm,Reranker())
             ev.execute("INSERT INTO label VALUES ('fixture','bb',0,NULL)")
+            calls_before = [list(b.calls) for b in backends]
             result = calibrate(con,ev,rows,backends,llm,Reranker())
+            self.assertEqual([b.calls for b in backends],calls_before)
             self.assertEqual(read_policy(con),result["selected"])
             self.assertEqual(result["selected"]["text_model"],VL)
             policy = {**result["selected"],"judge":"llm"}
