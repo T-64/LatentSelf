@@ -26,7 +26,7 @@ def dispatch(con,out,args):
             return dict(run=run,selected=best,path=str(path))
         if not args.model or not args.precision:
             raise ValueError("supply --model and --precision, or --select after all conditions")
-        return experiment(con,client,LocalLLM(),args.model,args.precision,args.count)
+        return experiment(con,client,LocalLLM(),args.model,args.precision,args.count,stage=args.stage)
     run_id = selected(con)
     run = con.execute("SELECT * FROM sae_run WHERE id=?",(run_id,)).fetchone()
     if not run:
@@ -52,6 +52,6 @@ def dispatch(con,out,args):
     if limit is not None:
         done = {r[0] for r in con.execute("SELECT feature FROM feature WHERE run_id=? AND detect_score IS NOT NULL",(run_id,))}
         candidates = [f for f in candidates if f not in done]
-    result = measure(con,client,LocalLLM(),run_id,candidates[:limit])
+    result = measure(con,client,LocalLLM(),run_id,candidates[:limit],stage=args.stage)
     result["limited"] = max(0,len(candidates)-limit) if limit is not None else 0
     return result

@@ -46,7 +46,7 @@ def select(metrics):
     return max(choices,key=lambda r:(r["detect_score"],-r["fvu"],-r["full_hours"])) if choices else base
 
 
-def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print):
+def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print,stage="both"):
     reader,repo,width,layers = MODELS[key]
     rows = sorted(texts(con,"turn_self"))
     sample = random.Random(seed).sample(rows,min(count,len(rows)))
@@ -61,6 +61,8 @@ def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print):
             saved = con.execute("SELECT v FROM meta WHERE k=?",(cache_key,)).fetchone()
             if saved:
                 return json.loads(saved[0])
+            if stage=="score":
+                raise ValueError("the reader has not finished preparing this matched experiment")
             start = monotonic()
             data = client.encode([text],[layer],formula=formula,experiment=True)[0][str(layer)]
             if any(data[k]!=v for k,v in (("reader",reader),("sae_repo",repo),("precision",precision),("formula",formula))):
@@ -96,7 +98,7 @@ def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print):
         candidates = [r[0] for r in con.execute("""SELECT feature FROM sae_act WHERE run_id=? GROUP BY feature
                       HAVING count(*)>=5 AND count(*)<=? ORDER BY feature""",(rid,len(sample)-2))]
         selected = random.Random(seed+layer).sample(candidates,min(50,len(candidates)))
-        labels = measure(con,client,llm,rid,selected,seed,emit)
+        labels = measure(con,client,llm,rid,selected,seed,emit,stage)
         scores = labels["scores"]
         result = dict(model=key,precision=precision,layer=layer,formula=chosen,pilot_fvu=errors,sample=len(sample),
                       fvu=sse/max(var,1e-10),delta_ce=loss/max(1,ce_tokens),dead_fraction=1-len(active)/width,

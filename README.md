@@ -134,3 +134,5 @@ lself search --feature 123 --json
 选型要求三个运行条件各有五层、同一组 2,000 个单元、每层 50 个带独立留出集的检测分数。`--count` 可用于小样本连通性检查。代码将这类运行排除在正式选型之外。实验指标和校验清单写在本机。公开基准采用 AllenAI 的 WildChat-1M 清理版（ODC-BY）。在服务器用 `python -m latentself.interp.baseline ~/.cache/latentself/wildchat-zh.jsonl` 生成固定种子的 15,000 条样本后，再启动读者。服务器可复用此样本，返回给 Mac 的是编号、哈希与编码结果。
 
 历史时区用 `LATENTSELF_TZ_PERIODS` 指定，例如 `[{"from":"2024-01-01","zone":"Europe/Berlin"}]`。未覆盖时段按 UTC 统计。`LATENTSELF_LIFE_DATE` 可设置人生节点对照日期。本机看板在输出目录的 `features/index.html`，可按名称筛选、查看原文高亮、打开出处。
+
+在共用一张显卡时，可以先为每个实验运行条件执行 `lself interp experiment --model … --precision … --stage prepare`。停掉读者、启动本地 LLM 后，使用同样的参数和 `--stage score`。前一步只需要读者，后一步从 Mac 的私有检查点读取样本并打分。全量特征命名 `lself interp label` 也支持这两个阶段。
