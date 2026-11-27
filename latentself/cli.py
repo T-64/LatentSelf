@@ -207,9 +207,21 @@ def cmd_eval(a):
             sys.exit(1)
 
 
+def cmd_titles(a):
+    from .backends.llm import LocalLLM
+    from .titles import titles
+    result = titles(_con(),LocalLLM(),a.limit)
+    print(json.dumps(result,ensure_ascii=False))
+    if result["failed"] or result.get("interrupted"):
+        sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("titles",help="summarize new or changed conversations")
+    s.add_argument("--limit",type=int)
+    s.set_defaults(f=cmd_titles)
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
     s.add_argument("query")
     for flag in ("strict","images","answers","json"):
