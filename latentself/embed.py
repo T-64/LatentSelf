@@ -10,7 +10,7 @@ from zipfile import BadZipFile
 
 import numpy as np
 
-from .backends import InferenceHTTPError
+from .backends import InferenceHTTPError, InferenceUnavailable
 from .backends.embed import normalize
 from .enrich.images import prepare
 
@@ -65,6 +65,8 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
                     input_hash=excluded.input_hash,dim=excluded.dim,vec=excluded.vec""",
                     ((kind,key,backend.model,digest,len(vec),vec.astype("<f2").tobytes())
                      for (kind,key,digest,_), vec in zip(batch,vectors,strict=True)))
+        except InferenceUnavailable:
+            raise
         except (OSError,ValueError,KeyError) as exc:
             if isinstance(exc,InferenceHTTPError) and exc.status in (400,413,422) and len(batch)>1:
                 mid = len(batch)//2
@@ -116,8 +118,6 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
             if pending:
                 used += 1
                 yield from pending
-    if kinds:
-        run_batches(pending_texts(),32,backend.embed_texts)
 
     def pending_images():
         used = 0
@@ -142,6 +142,11 @@ def index(con, backend, *, limit=None, include_images=True, turn_ids=None, kinds
             except (OSError,ValueError,SubprocessError,BadZipFile) as exc:
                 stats["failed"] += 1
                 stats["failures"].append({"kind":"attachment","id":row["id"],"error":str(exc)})
-    if include_images and backend.multimodal:
-        run_batches(pending_images(),4,backend.embed_images)
+    try:
+        if kinds:
+            run_batches(pending_texts(),32,backend.embed_texts)
+        if include_images and backend.multimodal:
+            run_batches(pending_images(),4,backend.embed_images)
+    except InferenceUnavailable as exc:
+        stats["interrupted"] = str(exc)
     return stats

@@ -5,6 +5,7 @@ from xml.etree.ElementTree import ParseError
 from subprocess import SubprocessError
 
 from . import docs, images
+from ..backends import InferenceUnavailable
 from ..ingest.gemini import _rebuild_fts
 
 
@@ -58,6 +59,11 @@ def enrich(con, llm, *, do_images=True, do_docs=True, limit=None, retry_errors=F
                 stats["omitted_frames"] += frames
                 emit(f"success {stats['success']} {row['id']}")
                 break
+            except InferenceUnavailable as exc:
+                if attempt == 0:
+                    continue
+                stats["interrupted"] = str(exc)
+                return stats
             except (OSError, BadZipFile, ParseError, ValueError, TypeError, KeyError, SubprocessError) as exc:
                 if attempt == 0:
                     continue

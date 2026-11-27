@@ -2,7 +2,7 @@
 import json
 from http.client import IncompleteRead
 from time import sleep
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -18,6 +18,10 @@ class InferenceHTTPError(OSError):
         super().__init__(f"inference endpoint returned HTTP {status}")
 
 
+class InferenceUnavailable(OSError):
+    """No complete inference response could be obtained through the tunnel."""
+
+
 def post(url, payload, timeout=120):
     target = urlparse(url)
     if target.scheme not in ('http', 'https') or target.hostname not in ('127.0.0.1', 'localhost', '::1'):
@@ -31,7 +35,9 @@ def post(url, payload, timeout=120):
                 return json.load(response)
         except HTTPError as error:
             raise InferenceHTTPError(error.code) from error
+        except URLError as error:
+            raise InferenceUnavailable("inference endpoint is unreachable") from error
         except (IncompleteRead, ConnectionResetError, BrokenPipeError) as error:
             if attempt:
-                raise OSError("inference connection closed before a complete response") from error
+                raise InferenceUnavailable("inference connection closed before a complete response") from error
             sleep(1)

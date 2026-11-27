@@ -5,6 +5,7 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 from tests.fakes import FakeLLM
+from latentself.backends import InferenceUnavailable
 from latentself.db import connect
 from latentself.enrich import enrich
 
@@ -61,6 +62,16 @@ class EnrichmentTest(unittest.TestCase):
         self.assertEqual(read,[b'heic',b'1',b'3',b'10'])
         self.assertEqual(self.con.execute("SELECT origin FROM attachment WHERE id='b.zip'").fetchone()[0], 'live_frame')
         self.assertTrue(self.con.execute("SELECT caption FROM attachment WHERE id='a.heic'").fetchone()[0].startswith('[Gemini 生成]'))
+
+    @patch("latentself.enrich.images.prepare",return_value=(["fixture"],0))
+    def test_network_outage_does_not_mark_photos_as_broken(self, prepare):
+        self.attachment("photo.jpg","image/jpeg")
+        def offline(messages):
+            raise InferenceUnavailable("offline")
+        result = enrich(self.con,FakeLLM(offline),emit=lambda _:None)
+        self.assertEqual((result["failed"],result["interrupted"]),(0,"offline"))
+        self.assertIsNone(self.con.execute("SELECT enrich_error FROM attachment").fetchone()[0])
+        self.assertEqual(enrich(self.con,self.llm,emit=lambda _:None)["success"],1)
 
     @patch('latentself.enrich.images.prepare', side_effect=ValueError("fixture error"))
     def test_failure_retries_once_and_requires_retry_flag(self, prepare):

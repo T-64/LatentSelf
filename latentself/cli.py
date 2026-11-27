@@ -118,7 +118,7 @@ def cmd_enrich(a):
     result = enrich(_con(), LocalLLM(), do_images=a.images or not a.docs,
                     do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors)
     print(json.dumps(result, ensure_ascii=False))
-    if result["failed"]:
+    if result["failed"] or result.get("interrupted"):
         sys.exit(1)
 
 
@@ -139,6 +139,8 @@ def cmd_embed(a):
     for backend,kinds in jobs:
         result = index(con,backend,limit=a.limit,kinds=kinds)
         print(json.dumps({"model":backend.model,**result},ensure_ascii=False))
+        if result.get("interrupted"):
+            sys.exit(1)
         failed += result["failed"]
     if failed:
         sys.exit(1)
@@ -179,7 +181,7 @@ def cmd_eval(a):
         backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
         out = ev.index_pool(con,labels,rows,backend,LocalLLM())
         print(json.dumps(out,ensure_ascii=False))
-        if out["failed"]:
+        if out["failed"] or out.get("interrupted"):
             sys.exit(1)
     elif a.prepare_photo_review:
         for out in ev.prepare_photo_review(con,labels,rows):

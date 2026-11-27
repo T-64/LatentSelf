@@ -7,12 +7,24 @@ from unittest.mock import patch
 import numpy as np
 
 from tests.fakes import FakeEmbed
-from latentself.backends import InferenceHTTPError
+from latentself.backends import InferenceHTTPError, InferenceUnavailable
 from latentself.db import connect
 from latentself.embed import index, turn_inputs
 
 
 class EmbedTest(unittest.TestCase):
+    def test_unreachable_service_keeps_inputs_pending(self):
+        class Offline(FakeEmbed):
+            def embed_texts(self,texts,kind="doc"):
+                raise InferenceUnavailable("offline")
+        with tempfile.TemporaryDirectory() as folder:
+            con = connect(Path(folder)/"db")
+            self.addCleanup(con.close)
+            con.execute("INSERT INTO turn VALUES ('a','fixture','prompt','2020','text','snapshot')")
+            result = index(con,Offline(),kinds=("turn",))
+            self.assertEqual((result["interrupted"],result["failed"],result["failures"]),("offline",0,[]))
+            self.assertEqual(index(con,FakeEmbed(),kinds=("turn",),emit=lambda _:None)["success"],1)
+
     def test_overlapping_requests_commit_each_batch_on_the_database_thread(self):
         rendezvous = threading.Barrier(2)
 
