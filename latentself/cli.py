@@ -156,6 +156,30 @@ def cmd_search(a):
         print(row["url"])
 
 
+def cmd_eval(a):
+    from . import evaluation as ev
+    from .backends.llm import LocalLLM
+    rows = ev.read_queries(a.queries)
+    con = _con()
+    labels = ev.evaluation_db(a.queries.parent / "labels.sqlite3")
+    if a.index_pool:
+        backend = next(b for b in ev.default_backends() if b.model==a.index_pool)
+        out = ev.index_pool(con,rows,backend,LocalLLM())
+        print(json.dumps(out,ensure_ascii=False))
+        if out["failed"]:
+            sys.exit(1)
+    elif a.prepare:
+        for n,out in enumerate(ev.prepare(con,labels,rows,ev.default_backends()),1):
+            print(n,json.dumps(out))
+    elif a.label:
+        print("已标注",ev.label_batch(con,labels,rows))
+    else:
+        report = list(ev.evaluate(con,labels,rows))
+        print(json.dumps(report,ensure_ascii=False,indent=2))
+        if not all(r["accepted"] for r in report):
+            sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -168,6 +192,13 @@ def main(argv=None):
     s.add_argument("--sort",choices=["time","score"],default="time")
     s.set_defaults(f=cmd_search)
     from .backends.embed import VL, TEXT
+    s = sub.add_parser("eval",help="prepare private comparison pools, review labels or measure acceptance")
+    s.add_argument("--queries",type=Path,default=config.DATA/"processed/latentself/eval/queries.yaml")
+    group = s.add_mutually_exclusive_group()
+    group.add_argument("--index-pool",choices=[VL,TEXT])
+    group.add_argument("--prepare",action="store_true")
+    group.add_argument("--label",action="store_true")
+    s.set_defaults(f=cmd_eval)
     s = sub.add_parser("embed", help="index new or changed model inputs")
     s.add_argument("--limit", type=int)
     s.add_argument("--model", choices=[VL,TEXT], default=VL)
