@@ -18,7 +18,9 @@ fraction=${LATENTSELF_GPU_MEMORY_FRACTION:-$default_fraction}
 [[ $fraction =~ ^0\.[0-9]+$ ]] || { echo "invalid GPU memory fraction" >&2; exit 2; }
 kv_bytes=${LATENTSELF_KV_CACHE_BYTES:-$default_kv}
 [[ $kv_bytes == auto || $kv_bytes =~ ^[1-9][0-9]*$ ]] || { echo "invalid KV cache byte count" >&2; exit 2; }
-ssh -o BatchMode=yes server bash -s -- "$1" "$fraction" "$kv_bytes" <<'REMOTE'
+slots=${LATENTSELF_JUDGE_SLOTS:-1}
+[[ $slots =~ ^[1-4]$ ]] || { echo "invalid number of judgment slots" >&2; exit 2; }
+ssh -o BatchMode=yes server bash -s -- "$1" "$fraction" "$kv_bytes" "$slots" <<'REMOTE'
 set -euo pipefail
 role=$1
 if [[ $role == llm ]]; then
@@ -78,7 +80,7 @@ if [[ $role == llm-private ]]; then
         --log-driver none --tmpfs /tmp --read-only --mount "type=bind,src=$models,dst=/models,readonly" \
         -p 127.0.0.1:8010:8000 "$image" -m /models/Qwen3.8-27B-UD-Q6_K_XL.gguf \
         --mmproj /models/mmproj-Qwen3.8-27B-F16.gguf --alias qwen3.8-27b \
-        -c 24576 -np 1 -ngl 99 -fa on --cache-type-k q8_0 --cache-type-v q8_0 \
+        -c "$((24576 * $4))" -np "$4" -ngl 99 -fa on --cache-type-k q8_0 --cache-type-v q8_0 \
         --cache-ram 0 --jinja --reasoning-budget 0 --host 0.0.0.0 --port 8000
     wait_ready
     exit

@@ -1,6 +1,8 @@
 import json
 import tempfile
 import unittest
+from threading import Barrier
+from unittest.mock import patch
 from pathlib import Path
 
 from tests.fakes import FakeEmbed,FakeLLM
@@ -11,6 +13,21 @@ from latentself.search import search,VectorIndex
 
 
 class SearchTest(unittest.TestCase):
+    def test_parallel_judgments_keep_batches_separate_and_reuse_committed_rows(self):
+        from latentself.search import _judge
+        both = Barrier(2,timeout=5)
+        def judge(messages):
+            batch = json.loads(messages[-1]["content"])["candidates"]
+            both.wait()
+            return {"results":[dict(conv_id=r["conv_id"],relevant=True,reason=r["excerpt"]) for r in batch]}
+        items = {str(i):f"example {i}" for i in range(18)}
+        model = FakeLLM(judge)
+        with patch.dict("os.environ",LATENTSELF_JUDGE_SLOTS="2"):
+            for _ in range(2):
+                result = _judge(self.con,model,"topic",items,{},None)
+                self.assertEqual({cid:r["reason"] for cid,r in result.items()},items)
+        self.assertEqual(len(model.calls),2)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
