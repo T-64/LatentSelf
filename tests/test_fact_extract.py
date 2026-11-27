@@ -23,7 +23,7 @@ class FactExtractTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             db = connect(Path(tmp)/"db")
             self.addCleanup(db.close)
-            db.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2024-02-03','在看 书','s')")
+            db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','fixture','prompt','2024-02-03','在看 书','s')")
             db.execute("INSERT INTO conversation(id,source) VALUES ('c','fixture')")
             db.execute("INSERT INTO turn_conv VALUES ('t','c',0)")
             item = dict(text="用户在看书。",kind="event",confidence=3,evidence=[dict(turn_id="1",quote="看书")])

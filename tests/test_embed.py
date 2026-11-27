@@ -20,7 +20,7 @@ class EmbedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             con = connect(Path(folder)/"db")
             self.addCleanup(con.close)
-            con.execute("INSERT INTO turn VALUES ('a','fixture','prompt','2020','text','snapshot')")
+            con.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('a','fixture','prompt','2020','text','snapshot')")
             result = index(con,Offline(),kinds=("turn",))
             self.assertEqual((result["interrupted"],result["failed"],result["failures"]),("offline",0,[]))
             self.assertEqual(index(con,FakeEmbed(),kinds=("turn",),emit=lambda _:None)["success"],1)
@@ -36,7 +36,7 @@ class EmbedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             con = connect(Path(folder)/"db")
             self.addCleanup(con.close)
-            con.executemany("INSERT INTO turn VALUES (?,'fixture','prompt','2020',?,'snapshot')",
+            con.executemany("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'fixture','prompt','2020',?,'snapshot')",
                             [(str(i),f"fixture {i}") for i in range(40)])
             progress = []
             result = index(con,Backend(),kinds=("turn",),include_images=False,emit=progress.append)
@@ -55,7 +55,7 @@ class EmbedTest(unittest.TestCase):
             con = connect(Path(folder)/"db")
             self.addCleanup(con.close)
             for key,text in enumerate(("first","invalid","last")):
-                con.execute("INSERT INTO turn VALUES (?,'fixture','prompt','2020',?,'snapshot')",(str(key),text))
+                con.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'fixture','prompt','2020',?,'snapshot')",(str(key),text))
             backend = Backend()
             def run():
                 return index(con,backend,kinds=("turn",),include_images=False,emit=lambda _:None)
@@ -72,7 +72,7 @@ class EmbedTest(unittest.TestCase):
             con = connect(Path(folder)/"db")
             self.addCleanup(con.close)
             for tid in ("a","b"):
-                con.execute("INSERT INTO turn VALUES (?,'gemini','prompt','2020','fixture','s')",(tid,))
+                con.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'gemini','prompt','2020','fixture','s')",(tid,))
                 con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,mime,origin)
                     VALUES (?,?,0,'sample.jpg','sample','exact','image/jpeg','user')""",(tid+"-file",tid))
             backend = FakeEmbed()
@@ -87,7 +87,7 @@ class EmbedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             con = connect(Path(folder)/"db")
             self.addCleanup(con.close)
-            con.executemany("INSERT INTO turn VALUES (?,'gemini','prompt','2020',?,'snapshot')",
+            con.executemany("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'gemini','prompt','2020',?,'snapshot')",
                             [('a','x'*2001),('b','fixture')])
             con.execute("INSERT INTO answer VALUES ('a',0,'','reply')")
             con.execute("""INSERT INTO attachment (id,turn_id,pos,stored_name,match,caption,origin)

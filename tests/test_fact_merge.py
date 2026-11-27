@@ -27,7 +27,7 @@ class FactMergeTest(unittest.TestCase):
             for i,text in enumerate(angles,1):
                 ts = f"2024-01-0{i}"
                 db.execute("INSERT INTO conversation(id,source,first_ts) VALUES (?,'fixture',?)",(text,ts))
-                db.execute("INSERT INTO turn VALUES (?,'fixture','prompt',?,?,'s')",(text,ts,text))
+                db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'fixture','prompt',?,?,'s')",(text,ts,text))
                 item = dict(text=text,kind="state",date_from=ts,date_to=None,confidence=3 if text=="alias" else 2,
                             evidence={text:text})
                 db.execute("INSERT INTO fact_source VALUES (?,'s','fixture',?,NULL)",(text,json.dumps([item])))

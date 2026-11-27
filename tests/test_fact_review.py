@@ -14,7 +14,7 @@ class FactReviewTest(unittest.TestCase):
             db = connect(out/"fixture")
             self.addCleanup(db.close)
             for tid in ("a","b"):
-                db.execute("INSERT INTO turn VALUES (?,'fixture','prompt','2024-01-01','I read a book','s')",(tid,))
+                db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'fixture','prompt','2024-01-01','I read a book','s')",(tid,))
                 db.execute("INSERT INTO turn_conv VALUES (?,'c',0)",(tid,))
                 db.execute("INSERT INTO fact(id,text,kind,confidence,status) VALUES (?,'reads','event',2,'active')",(tid,))
                 db.execute("INSERT INTO fact_evidence VALUES (?,?,'read a book')",(tid,tid))

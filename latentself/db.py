@@ -125,10 +125,13 @@ def _migrate(con: sqlite3.Connection) -> None:
     with con:
         con.execute("BEGIN IMMEDIATE")
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        if version in (2,3):
+        from .units import create_tables
+        if version in (2,3,4):
             _backfill_frame_origins(con)
             if version==2:
                 _create_review_tables(con)
+            if version<4:
+                create_tables(con)
             return
         if version != 0:
             raise ValueError(f"unsupported database version {version}")
@@ -155,6 +158,7 @@ def _migrate(con: sqlite3.Connection) -> None:
         """)
         _backfill_frame_origins(con)
         _create_review_tables(con)
+        create_tables(con)
 
 
 def connect(path: Path) -> sqlite3.Connection:

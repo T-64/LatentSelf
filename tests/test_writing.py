@@ -19,7 +19,7 @@ class WritingTest(unittest.TestCase):
             path = Path(tmp)/"fixture"
             db = connect(path)
             self.addCleanup(db.close)
-            db.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2024-03-02','I built a bridge.','s')")
+            db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','fixture','prompt','2024-03-02','I built a bridge.','s')")
             db.execute("INSERT INTO conversation(id,source,title) VALUES ('c','fixture','Bridge')")
             db.execute("INSERT INTO turn_conv VALUES ('t','c',0)")
             db.commit()

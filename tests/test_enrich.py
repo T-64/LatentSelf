@@ -17,7 +17,7 @@ class EnrichmentTest(unittest.TestCase):
         self.root = Path(tmp.name)
         self.con = connect(self.root / "test.db")
         self.addCleanup(self.con.close)
-        self.con.execute("INSERT INTO turn VALUES ('t','gemini','prompt','2020',?,'snapshot')", ('x'*330,))
+        self.con.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','gemini','prompt','2020',?,'snapshot')", ('x'*330,))
         self.llm = FakeLLM(dict(caption="fixture", ocr="label", tags=["sign"], content_kind="photo"))
 
     def attachment(self, name, mime, origin="user"):

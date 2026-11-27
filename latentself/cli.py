@@ -246,6 +246,15 @@ def cmd_facts(a):
         sys.exit(1)
 
 
+def cmd_units(a):
+    from .units import units,review_paste
+    con = _con()
+    result = units(con,a.recompute_paste)
+    if a.sample_paste or a.label:
+        result["review"] = review_paste(con,config.OUT,a.sample_paste or 100,answer=input if a.label else None)
+    print(json.dumps(result,ensure_ascii=False))
+
+
 def cmd_write(a):
     from .read_api import Reader
     from .writing import write,writer
@@ -256,6 +265,11 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("units",help="build chronological episodes and inspect paste classifications")
+    s.add_argument("--recompute-paste",action="store_true")
+    s.add_argument("--sample-paste",type=int)
+    s.add_argument("--label",action="store_true")
+    s.set_defaults(f=cmd_units)
     s = sub.add_parser("write",help="build a sourced timeline, edit the outline, then verify a draft")
     s.add_argument("topic")
     s.add_argument("--continue",dest="resume",action="store_true")

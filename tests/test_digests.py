@@ -31,7 +31,7 @@ class DigestTest(unittest.TestCase):
             self.addCleanup(db.close)
             for month,cid in ((1,"a"),(5,"b")):
                 ts = f"2024-{month:02d}-05"
-                db.execute("INSERT INTO turn VALUES (?,'fixture','prompt',?,'reading','s')",(cid,ts))
+                db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES (?,'fixture','prompt',?,'reading','s')",(cid,ts))
                 db.execute("INSERT INTO conversation(id,source,title) VALUES (?,'fixture','标题')",(cid,))
                 db.execute("INSERT INTO turn_conv VALUES (?,?,0)",(cid,cid))
                 db.execute("""INSERT INTO conv_summary(conv_id,summary,kinds,model,input_hash)

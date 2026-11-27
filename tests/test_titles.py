@@ -23,7 +23,7 @@ class TitlesTest(unittest.TestCase):
             db = connect(Path(tmp)/"test.db")
             self.addCleanup(db.close)
             db.execute("INSERT INTO conversation(id,source) VALUES ('c','fixture')")
-            db.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2020','reading','s')")
+            db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','fixture','prompt','2020','reading','s')")
             db.execute("INSERT INTO turn_conv VALUES ('t','c',0)")
             db.execute("INSERT INTO answer VALUES ('t',0,'','assistant-only')")
             db.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,match,caption,origin)

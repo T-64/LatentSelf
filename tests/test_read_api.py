@@ -24,7 +24,7 @@ class ReaderTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path = Path(tmp)/"fixture"
             db = connect(path)
-            db.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2024-03-02','reading','s')")
+            db.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','fixture','prompt','2024-03-02','reading','s')")
             db.execute("INSERT INTO answer VALUES ('t',0,'',?)",("x"*24000,))
             db.execute("INSERT INTO conversation(id,source,title) VALUES ('c','fixture','学习')")
             db.execute("INSERT INTO turn_conv VALUES ('t','c',0)")

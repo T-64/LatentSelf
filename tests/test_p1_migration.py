@@ -14,7 +14,7 @@ class MigrationTest(unittest.TestCase):
             db = root/"db"
             con = connect(db)
             con.execute("DELETE FROM meta WHERE k='frame_archive_origins_v1'")
-            con.execute("INSERT INTO turn VALUES ('t','gemini','prompt','2020','fixture','snap')")
+            con.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t','gemini','prompt','2020','fixture','snap')")
             for name,member in [("camera.zip","nested/frame_0.png"),("document.zip","notes.txt")]:
                 with ZipFile(root/name,"w") as archive:
                     archive.writestr(member,b"fixture")
@@ -33,7 +33,7 @@ class MigrationTest(unittest.TestCase):
             path = Path(folder) / "legacy.db"
             old = sqlite3.connect(path)
             old.executescript(SCHEMA)
-            old.execute("INSERT INTO turn VALUES ('t', 'gemini', 'live', '2020', '', 'snapshot')")
+            old.execute("INSERT INTO turn (id,source,kind,ts,prompt,snapshot) VALUES ('t', 'gemini', 'live', '2020', '', 'snapshot')")
             old.executemany("""
                 INSERT INTO attachment (id, turn_id, pos, stored_name, match, caption)
                 VALUES (?, 't', 0, ?, 'exact', 'existing caption')
@@ -43,7 +43,7 @@ class MigrationTest(unittest.TestCase):
             for attempt in range(2):
                 con = connect(path)
                 try:
-                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 3)
+                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 4)
                     self.assertEqual(dict(con.execute("SELECT id, origin FROM attachment")),
                                      {'a': 'generated', 'b': 'live_frame', 'c': 'user'})
                     self.assertEqual(con.execute("SELECT DISTINCT caption FROM attachment").fetchall()[0][0],
