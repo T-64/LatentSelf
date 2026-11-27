@@ -7,16 +7,31 @@ case "${1:-}" in
 esac
 root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 revision=$(git -C "$root" rev-parse HEAD)
-remote_dir=$(ssh -o BatchMode=yes server 'mkdir -p "$HOME/.cache/latentself"; mktemp -d "$HOME/.cache/latentself/reader-src-XXXXXXXX"')
-[[ $remote_dir =~ ^/[a-zA-Z0-9_./-]+$ ]]
-git -C "$root" archive "$revision" latentself | ssh -o BatchMode=yes server "tar -xf - -C '$remote_dir'"
-ssh -o BatchMode=yes server bash -s -- "$role" "$remote_dir" "$revision" <<'REMOTE'
+# Send the committed package and the boot script on the same SSH connection.
+# The archive expands into container tmpfs and disappears when the reader stops.
+{
+    printf '%s\n' "source_archive() { base64 -d <<'LATENTSELF_ARCHIVE'"
+    git -C "$root" archive --format=tar.gz "$revision" latentself | base64
+    printf '\n%s\n' LATENTSELF_ARCHIVE '}'
+    cat <<'REMOTE'
 set -euo pipefail
-role=$1 src=$2 revision=$3
+role=$1 revision=$2
 name=latentself-$role
+wait_ready() {
+    for ((i=0;i<240;i++)); do
+        if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8003/health >/dev/null 2>&1; then
+            echo "$role ready on loopback"; return
+        fi
+        [[ $(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || :) == true ]] || return 1
+        sleep 2
+    done
+    echo "Reader has not reached readiness" >&2
+    return 1
+}
 if docker inspect "$name" >/dev/null 2>&1; then
     test "$(docker inspect -f '{{index .Config.Labels "latentself.revision"}}' "$name")" = "$revision"
     docker start "$name" >/dev/null
+    wait_ready
     exit
 fi
 if ss -H -ltn | awk '$4 ~ /:8003$/ {found=1} END {exit !found}'; then
@@ -53,18 +68,15 @@ if [[ $precision == int8 ]]; then
     extra+=(-v "$quant:/extras:ro")
 fi
 docker run -d --rm --name "$name" --label "latentself.role=$role" --label "latentself.revision=$revision" \
-    --gpus all --network host --read-only --tmpfs /tmp:exec --log-driver none \
-    -v "$cache:/hub:ro" -v "$src:/app:ro" "${extra[@]}" -e HOME=/tmp -e PYTHONPATH=/app:/extras \
-    -e HF_HUB_OFFLINE=1 --entrypoint python3 vllm/vllm-openai:v0.34.0 -B -m latentself.interp.reader \
+    --gpus all --network host --read-only --tmpfs /tmp:exec --tmpfs /app --log-driver none \
+    -v "$cache:/hub:ro" "${extra[@]}" -e HOME=/tmp -e PYTHONPATH=/app:/extras \
+    -e HF_HUB_OFFLINE=1 --entrypoint sh vllm/vllm-openai:v0.34.0 -ec \
+    'until test -f /app/.ready; do sleep 0.2; done; exec python3 -B -m latentself.interp.reader "$@"' reader \
     --model-path "/hub/$model_path" --sae-path "/hub/$sae_path" --reader "Qwen/$model" \
     --sae-repo "Qwen/$sae" --precision "$precision" "${baseline[@]}" >/dev/null
-for ((i=0;i<240;i++)); do
-    if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8003/health >/dev/null 2>&1; then
-        echo "$role ready on loopback"; exit
-    fi
-    test "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || :)" = true
-    sleep 2
-done
-echo "Reader has not reached readiness" >&2
-exit 1
+trap 'docker stop "$name" >/dev/null 2>&1 || :' EXIT
+source_archive | docker exec -i "$name" sh -ec 'tar -xzf - -C /app && touch /app/.ready'
+wait_ready
+trap - EXIT
 REMOTE
+} | ssh -o BatchMode=yes server bash -s -- "$role" "$revision"
