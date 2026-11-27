@@ -1,11 +1,18 @@
 import importlib.util
 import unittest
+import json
+from unittest.mock import patch,Mock
 import numpy as np
 
-from latentself.topics import adjusted_rand,leiden,mutual_knn,recurrence
+from latentself.topics import adjusted_rand,leiden,mutual_knn,recurrence,remote_partitions
 
 
 class TopicTest(unittest.TestCase):
+    def test_remote_worker_accepts_only_graph_data(self):
+        with patch("latentself.topics.subprocess.run",return_value=Mock(stdout="[[0,0]]")) as run:
+            self.assertEqual(remote_partitions(2,[(0,1,.8)],[1.],42),[[0,0]])
+            self.assertEqual(set(json.loads(run.call_args.kwargs["input"])),{"n","edges","resolutions","seed"})
+
     def test_mutual_neighbours_and_recurrence(self):
         x = np.array([[1,0],[.99,.01],[0,1],[.01,.99]])
         edges = mutual_knn(x,1)

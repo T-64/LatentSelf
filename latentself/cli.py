@@ -353,7 +353,7 @@ def cmd_topics(a):
     from .topics import build,name_topics
     con = _con()
     if a.action=="build":
-        result = build(con,read_policy(con).get("text_model",VL))
+        result = build(con,read_policy(con).get("text_model",VL),server=a.compute=="server")
     elif a.action=="name":
         result = name_topics(con,LocalLLM())
     else:
@@ -423,6 +423,7 @@ def main(argv=None):
     s.set_defaults(f=cmd_interp)
     s = sub.add_parser("topics",help="cluster, name and compare conversation topics")
     s.add_argument("action",choices=("build","name","report"))
+    s.add_argument("--compute",choices=("server","local"),default="server",help="where to partition the anonymous neighbor graph")
     s.set_defaults(f=cmd_topics)
     s = sub.add_parser("analyze",help="write private calendar and interpretation reports")
     s.add_argument("metric",choices=("overview","timeline","diff","profile","unnamed","corr","clusters","all"))

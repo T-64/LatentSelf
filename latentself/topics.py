@@ -1,9 +1,14 @@
 """Mutual-neighbor communities, nesting, recurrence and SAE comparisons."""
 from collections import Counter,defaultdict
 from math import comb,sqrt
+import json
+from pathlib import Path
+import shlex
+import subprocess
 import numpy as np
 
 from .embed import DIALOGUE
+from .partition import leiden
 from .units import instant
 
 RESOLUTIONS = (.2,.5,1.,2.)
@@ -47,15 +52,16 @@ def mutual_knn(matrix,k=15):
     return [(i,j,sim) for i,row in enumerate(neighbors) for j,sim in row.items() if i<j and i in neighbors[j]]
 
 
-def leiden(n,edges,resolution,seed):
-    import igraph
-    import leidenalg
-    graph = igraph.Graph(n=n,edges=[(i,j) for i,j,_ in edges],directed=False)
-    if not edges:
-        return list(range(n))
-    partition = leidenalg.find_partition(graph,leidenalg.RBConfigurationVertexPartition,
-        weights=[w for _,_,w in edges],resolution_parameter=resolution,seed=seed,n_iterations=-1)
-    return list(partition.membership)
+def remote_partitions(n,edges,resolutions,seed,host="server"):
+    worker = Path(__file__).with_name("partition.py").read_text()
+    command = '"$HOME/.cache/latentself/analysis-venv/bin/python" -B -c '+shlex.quote(worker)
+    payload = json.dumps(dict(n=n,edges=edges,resolutions=resolutions,seed=seed),separators=(",",":"))
+    raw = subprocess.run(["ssh","-o","BatchMode=yes",host,command],input=payload,text=True,
+                         capture_output=True,check=True,timeout=1800).stdout
+    groups = json.loads(raw)
+    if len(groups)!=len(resolutions) or any(len(row)!=n or any(type(i) is not int or i<0 for i in row) for row in groups):
+        raise ValueError("incomplete community assignments")
+    return groups
 
 
 def recurrence(stamps):
@@ -63,17 +69,19 @@ def recurrence(stamps):
     return sum((b-a).days>14 for a,b in zip(days,days[1:])),len(days)
 
 
-def build(con,model,seed=42,partition=leiden):
+def build(con,model,seed=42,partition=leiden,*,server=False):
     ids,matrix,dates,_ = conversation_vectors(con,model)
     edges = mutual_knn(matrix)
+    levels = remote_partitions(len(ids),edges,RESOLUTIONS,seed) if server else [
+        partition(len(ids),edges,resolution,seed) for resolution in RESOLUTIONS]
     result = {}
     parents = {}
     with con:
         con.execute("DELETE FROM topic_member")
         con.execute("DELETE FROM topic")
-        for resolution in RESOLUTIONS:
+        for resolution,assignments in zip(RESOLUTIONS,levels,strict=True):
             groups = defaultdict(set)
-            for i,label in enumerate(partition(len(ids),edges,resolution,seed)):
+            for i,label in enumerate(assignments):
                 groups[f"r{resolution}_{label}"].add(i)
             for name,members in groups.items():
                 indexes = sorted(members)

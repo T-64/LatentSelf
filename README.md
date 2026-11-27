@@ -137,6 +137,8 @@ lself search --feature 123 --json
 
 在共用一张显卡时，可以先为每个实验运行条件执行 `lself interp experiment --model … --precision … --stage prepare`。停掉读者、启动本地 LLM 后，使用同样的参数和 `--stage score`。前一步只需要读者，后一步从 Mac 的私有检查点读取样本并打分。全量特征命名 `lself interp label` 也支持这两个阶段。
 
+话题聚类默认在服务器运行 Leiden。运行 `bash scripts/server/setup-analysis.sh` 可在服务器建立隔离的 Python 环境。Mac 只通过 SSH 发送本次计算的整数节点编号、邻接边及权重，返回四层社区编号。已在本机安装可选依赖时也可使用 `lself topics build --compute local`。
+
 ### 电影推荐
 
 设置 `LATENTSELF_CATALOG_SRC` 指向包含两个目录导出文件的文件夹。导入会按 IMDb ID 和 canonicalKey 合并。若私人目录只有精选清单、没有明确的观看状态，导入会报告数量并保留未知状态。可通过 `LATENTSELF_OWNER_LIST_STATUS` 将你明确指定的来源键映射到 `watched` 或 `wanted`。
