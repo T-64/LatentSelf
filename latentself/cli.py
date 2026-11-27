@@ -128,9 +128,23 @@ def cmd_enrich(a):
         sys.exit(1)
 
 
+def cmd_embed(a):
+    from .backends.embed import Embedder
+    from .embed import index
+    result = index(_con(), Embedder(a.model), limit=a.limit)
+    print(json.dumps(result, ensure_ascii=False))
+    if result["failed"]:
+        sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    from .backends.embed import VL, TEXT
+    s = sub.add_parser("embed", help="index new or changed model inputs")
+    s.add_argument("--limit", type=int)
+    s.add_argument("--model", choices=[VL,TEXT], default=VL)
+    s.set_defaults(f=cmd_embed)
     s = sub.add_parser("enrich", help="describe images and extract document text")
     s.add_argument("--images", action="store_true")
     s.add_argument("--docs", action="store_true")
