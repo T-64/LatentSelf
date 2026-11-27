@@ -22,6 +22,7 @@ class DigestTest(unittest.TestCase):
     def test_rollup_validates_period_and_reuses_unchanged_sources(self):
         def answer(messages):
             refs = sorted(references(messages[-1]["content"]))
+            self.assertTrue(all(r[2:].isdecimal() for r in refs))
             response = {s:[] for s in SECTIONS}
             response["事件"] = ["合成记录 "+" ".join(f"[{r}]" for r in refs)+" [c:wrong]","无证据"]
             return response
