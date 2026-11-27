@@ -69,6 +69,26 @@ def has_photo_target(ev,query):
                       (query,)).fetchone() is not None
 
 
+def review_status(path,rows):
+    """Summarize the currently known pool without exposing queries or writing the archive."""
+    from contextlib import closing
+    if not Path(path).is_file():
+        return dict(queries=len(rows),available=False,by_query=[])
+    with closing(sqlite3.connect(Path(path).absolute().as_uri()+"?mode=ro",uri=True)) as ev:
+        result = []
+        for number,row in enumerate(rows,1):
+            q = row["q"]
+            total,automatic,owner,pending = ev.execute("""WITH candidates AS (
+                SELECT cid FROM pool WHERE q=:q UNION SELECT cid FROM photo_review WHERE q=:q)
+                SELECT count(*),count(c.cid),count(l.cid)-count(c.cid),count(*)-count(l.cid)
+                FROM candidates p LEFT JOIN label l ON l.q=:q AND l.cid=p.cid
+                LEFT JOIN consensus_label c ON c.q=:q AND c.cid=p.cid""",{"q":q}).fetchone()
+            result.append(dict(number=number,candidates=total,consensus=automatic,owner=owner,
+                               pending=pending,photo_target=has_photo_target(ev,q) if row.get("photo") else None))
+    return dict(queries=len(rows),available=True,by_query=result,
+                totals={k:sum(r[k] for r in result) for k in ("candidates","consensus","owner","pending")})
+
+
 def prepare(con, ev, rows, backends, llm=None):
     llm = llm or LocalLLM()
     if {b.model for b in backends} != {VL,TEXT}:
