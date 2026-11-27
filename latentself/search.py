@@ -16,6 +16,9 @@ from .backends.embed import Embedder, Reranker, VL, TEXT, INSTRUCTION
 from .backends.llm import LocalLLM
 
 
+from .sources import conversation_url, turn_order
+
+
 def matching_turns(con, text, answers=False):
     if not text:
         return []
@@ -135,8 +138,8 @@ def configured_indexes(con, policy, *, visual=None, text=None):
 
 def _previews(con, cid, hits, terms, answers, stats):
     meta = con.execute("SELECT first_ts,last_ts,n_turns FROM conversation WHERE id=?", (cid,)).fetchone()
-    first = con.execute("""SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id
-        WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live','canvas') ORDER BY t.ts,t.id LIMIT 1""",(cid,)).fetchone()[0]
+    first = con.execute(f"""SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id
+        WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live','canvas') ORDER BY {turn_order(con,cid)} LIMIT 1""",(cid,)).fetchone()[0]
     ordered = sorted(hits.items(),key=lambda item:(-item[1][0],item[0]))
     evidence, snippets = [], []
     paths = []
@@ -166,7 +169,7 @@ def _previews(con, cid, hits, terms, answers, stats):
     stats["judge_prompt_chars_omitted"] += max(0,len(first)-200) + max(0,len(evidence)-1500)
     return dict(conv_id=cid,**dict(meta),first_prompt=first,hits=len(hits),snippets=snippets,
                 omitted_snippets=max(0,len(hits)-3),images=list(dict.fromkeys(paths)),
-                url=f"https://gemini.google.com/app/{cid}"), evidence[:1500]
+                url=conversation_url(con,cid)), evidence[:1500]
 
 
 def _judge_batch(llm, query, batch):
@@ -259,11 +262,11 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
     policy = read_policy(con) if policy is None else policy
     notices = []
     stats = dict(vector_turns_omitted=0,conversations_omitted=0,judge_prompt_chars_omitted=0)
-    where = []
+    where = ["ts!=''"] if since or until else []
     params = []
     for op,bound in ((">=",since),("<=",until)):
         if bound:
-            where.append(f"substr(ts,1,7){op}?")
+            where.append(f"substr(ts,1,{len(bound)}){op}?")
             params.append(bound)
     if images_only:
         where.append("""EXISTS (SELECT 1 FROM attachment a WHERE a.turn_id=t.id AND path IS NOT NULL

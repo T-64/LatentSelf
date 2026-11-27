@@ -248,7 +248,7 @@ def _link_by_time(con):
         target = nearest_before(r["ts"])
         if target:
             con.execute("INSERT OR IGNORE INTO turn_conv SELECT ?, conv_id, 1 FROM turn_conv WHERE turn_id=?", (r["id"], target))
-    for r in con.execute("SELECT s.turn_id, t.ts FROM signal s JOIN turn t ON t.id=s.turn_id").fetchall():
+    for r in con.execute("SELECT s.turn_id, t.ts FROM signal s JOIN turn t ON t.id=s.turn_id WHERE t.source=?",(SOURCE,)).fetchall():
         con.execute("UPDATE signal SET target_id=? WHERE turn_id=?", (nearest_before(r["ts"]), r["turn_id"]))
 
 
@@ -268,6 +268,14 @@ def _rebuild_conversations(con):
 def _rebuild_fts(con, turn_id=None):
     params = () if turn_id is None else (turn_id,)
     con.execute("DELETE FROM fts_turn" + (" WHERE turn_id=?" if params else ""), params)
+    insert_fts(con, params if params else None)
+
+
+def insert_fts(con, turn_ids=None):
+    """Index fresh turns. Pass a bounded batch of IDs when adding a new source."""
+    if turn_ids is not None and not turn_ids:
+        return
+    select_ids = "" if turn_ids is None else " AND t.id IN (" + ",".join("?" for _ in turn_ids) + ")"
     con.execute("""
         INSERT INTO fts_turn (turn_id, prompt, answer, extra)
         SELECT t.id, t.prompt,
@@ -277,4 +285,4 @@ def _rebuild_fts(con, turn_id=None):
                || COALESCE((SELECT ' ' || c.title || ' ' || c.content FROM canvas c WHERE c.turn_id=t.id), '')
         FROM turn t
         WHERE t.kind IN ('prompt','branch','link_import','live','canvas')"""
-        + (" AND t.id=?" if params else ""), params)
+        + select_ids, turn_ids or ())

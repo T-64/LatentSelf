@@ -9,10 +9,10 @@ from ..backends import InferenceUnavailable
 from ..ingest.gemini import _rebuild_fts
 
 
-def enrich(con, llm, *, do_images=True, do_docs=True, limit=None, retry_errors=False, emit=print):
+def enrich(con, llm, *, do_images=True, do_docs=True, limit=None, retry_errors=False, emit=print, source=None):
     stats = dict(success=0, skipped=0, failed=0, limited=0, failures=[], omitted_chars=0, omitted_frames=0)
     rows = con.execute("""SELECT a.*, t.prompt FROM attachment a JOIN turn t ON t.id=a.turn_id
-                          ORDER BY t.ts,a.pos,a.id""").fetchall()
+                          WHERE (? IS NULL OR t.source=?) ORDER BY t.ts,a.pos,a.id""",(source, source)).fetchall()
     for row in rows:
         name = row["stored_name"]
         suffix = Path(name).suffix.lower()

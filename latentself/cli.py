@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import config
 from .db import connect
+from .sources import conversation_url, turn_order
 
 DIALOGUE_SQL = "('prompt','branch','link_import','live','canvas')"
 
@@ -25,6 +26,14 @@ def _con():
 
 
 def cmd_ingest(a):
+    if a.source == "aistudio":
+        from contextlib import closing
+        from .ingest import aistudio
+        if not a.snapshot:
+            raise ValueError("AI Studio import needs --snapshot DIR")
+        with closing(_con()) as con:
+            print(json.dumps(aistudio.ingest(con,a.snapshot),ensure_ascii=False,indent=2))
+        return
     from .ingest import gemini
     snap = Path(a.snapshot).expanduser() if a.snapshot else config.latest_gemini_snapshot()
     stats = gemini.ingest(_con(), snap)
@@ -39,7 +48,7 @@ def cmd_stats(a):
     print("turns by kind", dict(q("SELECT kind, COUNT(*) FROM turn GROUP BY kind ORDER BY 2 DESC")))
     print("conversations", q("SELECT COUNT(*) FROM conversation")[0][0])
     print("attachments  ", dict(q("SELECT match, COUNT(*) FROM attachment GROUP BY match")))
-    print("time range   ", tuple(q("SELECT MIN(ts), MAX(ts) FROM turn")[0]))
+    print("time range   ", tuple(q("SELECT MIN(NULLIF(ts,'')), MAX(NULLIF(ts,'')) FROM turn")[0]))
 
 
 def _matching_turns(con, text, answers):
@@ -65,7 +74,7 @@ def cmd_grep(a):
         GROUP BY tc.conv_id ORDER BY hit_ts""").fetchall()
     print(f"{len(rows)} conversations, {len(ids)} matching turns\n")
     for r in rows[-a.n:] if a.n else rows:
-        first = con.execute("SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live') ORDER BY t.ts LIMIT 1", (r["conv_id"],)).fetchone()
+        first = con.execute(f"SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live') ORDER BY {turn_order(con,r['conv_id'])} LIMIT 1", (r["conv_id"],)).fetchone()
         print(f"■ {r['first_ts'][:10]} → {r['last_ts'][:10]}  {r['n_turns']}轮  {r['hits']}处命中  {r['conv_id']}")
         print(f"  开头: {_clip(first[0] if first else '', 70)}")
         for tid in r["turn_ids"].split(",")[:3]:
@@ -74,7 +83,7 @@ def cmd_grep(a):
             if a.images:
                 for x in con.execute("SELECT id, orig_name, path FROM attachment WHERE turn_id=? ORDER BY pos", (tid,)):
                     print(f"      [{x['id']}] {x['orig_name'] or ''} → {x['path'] or '(file not found)'}")
-        print(f"  https://gemini.google.com/app/{r['conv_id']}\n")
+        print(f"  {conversation_url(con,r['conv_id'])}\n")
 
 
 def cmd_show(a):
@@ -83,8 +92,8 @@ def cmd_show(a):
     if not c:
         sys.exit(f"unknown conversation {a.conv_id}")
     print(f"# {a.conv_id}  {c['first_ts'][:10]} → {c['last_ts'][:10]}  {c['n_turns']}轮")
-    print(f"https://gemini.google.com/app/{a.conv_id}\n")
-    for t in con.execute(f"SELECT t.* FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN {DIALOGUE_SQL} ORDER BY t.ts", (a.conv_id,)):
+    print(f"{conversation_url(con,a.conv_id)}\n")
+    for t in con.execute(f"SELECT t.* FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id WHERE tc.conv_id=? AND t.kind IN {DIALOGUE_SQL} ORDER BY {turn_order(con,a.conv_id)}", (a.conv_id,)):
         print(f"── {t['ts'][:16].replace('T', ' ')} UTC  [{t['kind']}]")
         print("Q:", t["prompt"] if a.full else _clip(t["prompt"], 400))
         for x in con.execute("SELECT id, orig_name, path FROM attachment WHERE turn_id=? ORDER BY pos", (t["id"],)):
@@ -116,7 +125,7 @@ def cmd_enrich(a):
     from .backends.llm import LocalLLM
     from .enrich import enrich
     result = enrich(_con(), LocalLLM(), do_images=a.images or not a.docs,
-                    do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors)
+                    do_docs=a.docs or not a.images, limit=a.limit, retry_errors=a.retry_errors, source=a.source)
     print(json.dumps(result, ensure_ascii=False))
     if result["failed"] or result.get("interrupted"):
         sys.exit(1)
@@ -243,10 +252,13 @@ def main(argv=None):
     s = sub.add_parser("enrich", help="describe images and extract document text")
     s.add_argument("--images", action="store_true")
     s.add_argument("--docs", action="store_true")
+    s.add_argument("--source", choices=("gemini","aistudio"))
     s.add_argument("--limit", type=int)
     s.add_argument("--retry-errors", action="store_true")
     s.set_defaults(f=cmd_enrich)
-    s = sub.add_parser("ingest"); s.add_argument("--snapshot"); s.set_defaults(f=cmd_ingest)
+    s = sub.add_parser("ingest"); s.add_argument("--snapshot")
+    s.add_argument("--source", choices=("gemini","aistudio"), default="gemini")
+    s.set_defaults(f=cmd_ingest)
     s = sub.add_parser("stats"); s.set_defaults(f=cmd_stats)
     s = sub.add_parser("grep"); s.add_argument("text"); s.add_argument("--answers", action="store_true", help="also search Gemini's answers")
     s.add_argument("--images", action="store_true", help="only turns with attachments"); s.add_argument("-n", type=int, default=0, help="show only the latest N")
