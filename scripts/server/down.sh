@@ -2,8 +2,8 @@
 set -euo pipefail
 case "${1:-}" in
     llm) exec ssh -o BatchMode=yes server "bash -ic 'qwen-off'" ;;
-    embed|text|rerank) ;;
-    *) echo "usage: $0 embed|text|rerank|llm" >&2; exit 2 ;;
+    embed|text|rerank|llm-private) ;;
+    *) echo "usage: $0 embed|text|rerank|llm|llm-private" >&2; exit 2 ;;
 esac
 ssh -o BatchMode=yes server bash -s -- "$1" <<'REMOTE'
 set -euo pipefail

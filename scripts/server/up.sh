@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
-    embed|text|rerank|llm) ;;
-    *) echo "usage: $0 embed|text|rerank|llm" >&2; exit 2 ;;
+    embed|text|rerank|llm|llm-private) ;;
+    *) echo "usage: $0 embed|text|rerank|llm|llm-private" >&2; exit 2 ;;
 esac
 ssh -o BatchMode=yes server bash -s -- "$1" <<'REMOTE'
 set -euo pipefail
@@ -27,6 +27,19 @@ if docker inspect "$name" >/dev/null 2>&1; then
     test "$(docker inspect -f '{{index .Config.Labels "latentself.role"}}' "$name")" = "$role"
     docker start "$name" >/dev/null
     exit
+fi
+if [[ $role == llm-private ]]; then
+    # Reuse the installed weights and exact image without publishing the owner's proxy.
+    image=$(docker inspect -f '{{.Image}}' qwen-backend)
+    models=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/models"}}{{.Source}}{{end}}{{end}}' qwen-backend)
+    test -s "$models/Qwen3.8-27B-UD-Q6_K_XL.gguf"
+    test -s "$models/mmproj-Qwen3.8-27B-F16.gguf"
+    exec docker run -d --rm --name "$name" --label "latentself.role=$role" --gpus all \
+        --log-driver none --tmpfs /tmp --read-only --mount "type=bind,src=$models,dst=/models,readonly" \
+        -p 127.0.0.1:8010:8000 "$image" -m /models/Qwen3.8-27B-UD-Q6_K_XL.gguf \
+        --mmproj /models/mmproj-Qwen3.8-27B-F16.gguf --alias qwen3.8-27b \
+        -c 24576 -np 1 -ngl 99 -fa on --cache-type-k q8_0 --cache-type-v q8_0 \
+        --cache-ram 0 --jinja --reasoning-budget 0 --host 0.0.0.0 --port 8000
 fi
 cache="$HOME/.cache/huggingface"
 modeldir="hub/models--${model/\//--}"
