@@ -62,3 +62,15 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(out["mode"],"unjudged")
         self.assertTrue(any("仅关键词" in n for n in out["notices"]))
         self.assertEqual(len(out["results"]),3)
+
+    def test_incomplete_batch_retries_only_unresolved_id(self):
+        calls = []
+        def judge(messages):
+            ids = [c["conv_id"] for c in json.loads(messages[-1]["content"])["candidates"]]
+            calls.append(ids)
+            if len(ids)>1:
+                ids = ids[:-1]
+            return {"results":[{"conv_id":cid,"relevant":True,"reason":"fixture"} for cid in ids]}
+        out = self.run_search(mode="strict",llm=FakeLLM(judge))
+        self.assertEqual(len(out["results"]),3)
+        self.assertEqual(calls[1:],[calls[0][-1:]])
