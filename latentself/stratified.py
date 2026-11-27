@@ -249,11 +249,12 @@ def label_batch(db,rows,limit=30,ask=input,emit=print):
     check_frame(db,rows)
     if limit < 1:
         raise ValueError("batch must be positive")
-    todo = db.execute("""SELECT s.q,s.cid,f.source,f.excerpt,f.url FROM sample s JOIN frame f USING(q,cid)
+    total = db.execute("SELECT count(*) FROM sample").fetchone()[0]
+    todo = db.execute("""SELECT s.position,s.q,s.cid,f.source,f.excerpt,f.url FROM sample s JOIN frame f USING(q,cid)
                          LEFT JOIN decision d USING(q,cid) WHERE d.answer IS NULL ORDER BY s.position LIMIT ?""",(limit,)).fetchall()
     done = 0
-    for q,cid,source,excerpt,url in todo:
-        emit(f"\n查询：{q}\n来源：{source}\n{excerpt}\n{url}")
+    for position,q,cid,source,excerpt,url in todo:
+        emit(f"\n清单 {position}/{total} · 查询：{q}\n来源：{source}\n{excerpt}\n{url}")
         while (choice:=ask("相关？ y 是 / n 否 / s 跳过 / q 暂停：").strip().lower()) not in ("y","n","s","q"):
             emit("请输入 y、n、s 或 q。")
         if choice=="q":
