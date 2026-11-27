@@ -226,14 +226,21 @@ def cmd_facts(a):
     from .backends.embed import Embedder,VL
     from .backends.llm import LocalLLM
     from .fact_merge import merge
+    from .fact_review import verify,export_facts,review_sample
     from .facts import extract
     from .search import read_policy
     con = _con()
     if a.action=="extract":
         result = extract(con,LocalLLM(),a.limit)
-    else:
+    elif a.action=="merge":
         backend = Embedder(read_policy(con).get("text_model",VL))
         result = merge(con,LocalLLM(),backend,a.vectors_only)
+    elif a.action=="verify":
+        result = verify(con,LocalLLM())
+    elif a.action=="export":
+        result = export_facts(con,config.OUT)
+    else:
+        result = review_sample(con,config.OUT,a.seed,a.label)
     print(json.dumps(result,ensure_ascii=False))
     if result.get("failed") or result.get("interrupted"):
         sys.exit(1)
@@ -253,6 +260,11 @@ def main(argv=None):
     steps = s.add_subparsers(dest="action",required=True)
     steps.add_parser("extract").add_argument("--limit",type=int)
     steps.add_parser("merge").add_argument("--vectors-only",action="store_true")
+    steps.add_parser("verify")
+    steps.add_parser("export")
+    review = steps.add_parser("review")
+    review.add_argument("--seed",type=int,default=42)
+    review.add_argument("--label",action="store_true")
     s.set_defaults(f=cmd_facts)
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
     s.add_argument("query")
