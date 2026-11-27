@@ -3,12 +3,41 @@ import tempfile
 import unittest
 
 from latentself.db import connect
-from latentself.evaluation import evaluation_db,extend_pool,label_batch,metrics,prepare_photo_review,read_queries
+from latentself.evaluation import evaluation_db,extend_pool,label_batch,metrics,prepare_photo_review,read_queries,set_target_photo
 from tests.fakes import FakeLLM
 from unittest.mock import patch
 
 
 class EvaluationTest(unittest.TestCase):
+    def test_known_or_interactively_selected_photo_needs_no_other_consensus_review(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            db = connect(root/"main.db")
+            ev = evaluation_db(root/"labels.db")
+            self.addCleanup(db.close)
+            self.addCleanup(ev.close)
+            path = root/"target.ppm"
+            path.write_bytes(b"P6\n1 1\n255\n\xff\0\0")
+            db.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2020','red','s')")
+            db.execute("INSERT INTO conversation(id,source,n_turns) VALUES ('a','fixture',1)")
+            db.execute("INSERT INTO turn_conv VALUES ('t','a',0)")
+            db.execute("""INSERT INTO attachment(id,turn_id,pos,path,stored_name,match,mime)
+                VALUES ('pic','t',0,?,'target.ppm','exact','image/x-portable-pixmap')""",(str(path),))
+            rows = [{"q":"target","photo":True}]
+            for cid in ("a","b"):
+                ev.execute("INSERT INTO pool VALUES ('target',?,'[\"visual\",\"text\"]','fixture')",(cid,))
+                ev.execute("INSERT INTO label VALUES ('target',?,1,NULL)",(cid,))
+                ev.execute("INSERT INTO consensus_label VALUES ('target',?)",(cid,))
+            answers = iter(["y","1"])
+            self.assertEqual(label_batch(db,ev,rows,ask=lambda _:next(answers),emit=lambda _:None),1)
+            self.assertEqual([r[0] for r in ev.execute("SELECT cid FROM consensus_label")],["b"])
+            self.assertEqual(label_batch(db,ev,rows,ask=lambda _:self.fail("target already found")),0)
+            external = [{"q":"missed","photo":True}]
+            self.assertEqual(set_target_photo(db,ev,external,1,path),1)
+            self.assertEqual(tuple(ev.execute("SELECT cid,photo FROM label WHERE q='missed'").fetchone()),("a",str(path)))
+            with self.assertRaisesRegex(ValueError,"existing image"):
+                set_target_photo(db,ev,external,1,root/"missing")
+
     def test_early_photo_labels_survive_full_pool_preparation(self):
         with tempfile.TemporaryDirectory() as folder:
             con = connect(Path(folder)/"main.db")

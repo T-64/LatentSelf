@@ -191,6 +191,9 @@ def cmd_eval(a):
             print(n,json.dumps(out))
     elif a.label:
         print("已标注",ev.label_batch(con,labels,rows))
+    elif a.target_photo:
+        number,path = a.target_photo
+        print("已确认目标照片所属对话",ev.set_target_photo(con,labels,rows,int(number),path))
     elif a.calibrate or a.score_reranker:
         from .calibration import calibrate
         print(json.dumps(calibrate(con,labels,rows,score_only=a.score_reranker),ensure_ascii=False,indent=2))
@@ -223,6 +226,8 @@ def main(argv=None):
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--prepare-photo-review",action="store_true",help="queue guaranteed photo keyword matches for early review")
     group.add_argument("--label",action="store_true")
+    group.add_argument("--target-photo",nargs=2,metavar=("QUERY_NUMBER","FILE"),
+                       help="identify a known target photo by private query number and exact local path")
     group.add_argument("--calibrate",action="store_true")
     group.add_argument("--score-reranker",action="store_true",help="save measured reranker batches before loading the LLM")
     group.add_argument("--extend-pool",action="store_true")

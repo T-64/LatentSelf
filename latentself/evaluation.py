@@ -58,6 +58,11 @@ def evaluation_vector(ev,backend,query):
     return vector
 
 
+def has_photo_target(ev,query):
+    return ev.execute("SELECT 1 FROM label WHERE q=? AND relevant=1 AND photo IS NOT NULL LIMIT 1",
+                      (query,)).fetchone() is not None
+
+
 def prepare(con, ev, rows, backends, llm=None):
     llm = llm or LocalLLM()
     if {b.model for b in backends} != {VL,TEXT}:
@@ -105,10 +110,8 @@ def prepare(con, ev, rows, backends, llm=None):
                     routes[cid].add(source)
         excerpts = {cid:_previews(con,cid,turns,terms,True,counts)[1]
                     for cid,turns in hits.items()}
-        # Strict can add one vote to a retrieved conversation. Only a single-route
-        # text match can change review status. Owners identify the actual photo.
-        undecided = {cid:excerpt for cid,excerpt in excerpts.items()
-                     if not row.get("photo") and len(routes[cid])==1}
+        # An extra strict vote can only change review status for a single-route match.
+        undecided = {cid:excerpt for cid,excerpt in excerpts.items() if len(routes[cid])==1}
         judgments = _judge(con,llm,query,undecided,{},Reranker())
         counts["strict_candidates"] = len(undecided)
         counts["strict_unneeded"] = len(excerpts)-len(undecided)
@@ -121,13 +124,14 @@ def prepare(con, ev, rows, backends, llm=None):
                 if cid in judgments and judgments[cid]["relevant"]:
                     routes[cid].add("strict")
                 ev.execute("INSERT INTO pool VALUES (?,?,?,?)",(query,cid,json.dumps(sorted(routes[cid])),excerpt))
-                if len(routes[cid]) >= 2 and not row.get("photo"):
+                if len(routes[cid]) >= 2:
                     inserted = ev.execute("INSERT OR IGNORE INTO label VALUES (?,?,1,NULL)",(query,cid)).rowcount
                     if inserted:
                         ev.execute("INSERT INTO consensus_label VALUES (?,?)",(query,cid))
         counts["consensus_labels"] = ev.execute("SELECT count(*) FROM consensus_label WHERE q=?",(query,)).fetchone()[0]
         counts["pending_owner_labels"] = ev.execute("""SELECT count(*) FROM pool p LEFT JOIN label l USING(q,cid)
             WHERE p.q=? AND l.cid IS NULL""",(query,)).fetchone()[0]
+        counts["target_photo_pending"] = bool(row.get("photo") and not has_photo_target(ev,query))
         yield {"candidates":len(excerpts),"covered_turns":len(coverage),**counts}
 
 
@@ -154,20 +158,47 @@ def prepare_photo_review(con, ev, rows, llm=None):
         yield {"query_number":number, "candidates":len(hits), **counts}
 
 
+def save_owner_label(ev,query,cid,relevant,photo=None):
+    ev.execute("""INSERT INTO label VALUES (?,?,?,?) ON CONFLICT(q,cid)
+                DO UPDATE SET relevant=excluded.relevant,photo=excluded.photo""",(query,cid,relevant,photo))
+    ev.execute("DELETE FROM consensus_label WHERE q=? AND cid=?",(query,cid))
+
+
+def set_target_photo(con,ev,rows,number,path):
+    if not 1<=number<=len(rows) or not rows[number-1].get("photo"):
+        raise ValueError("choose a photo query by its one-based position in the query file")
+    path = str(Path(path).expanduser().absolute())
+    cids = [r[0] for r in con.execute("""SELECT DISTINCT tc.conv_id FROM attachment a
+            JOIN turn_conv tc ON tc.turn_id=a.turn_id WHERE a.path=?
+            AND (a.mime LIKE 'image/%' OR a.origin='live_frame')""",(path,))]
+    if not cids or not Path(path).is_file():
+        raise ValueError("target must be an existing image or Live attachment in the local archive")
+    with ev:
+        for cid in cids:
+            save_owner_label(ev,rows[number-1]["q"],cid,True,path)
+    return len(cids)
+
+
 def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
     done = 0
     for row in rows:
         query = row["q"]
+        needs_target = row.get("photo") and not has_photo_target(ev,query)
         pending = ev.execute("""WITH candidates AS (
             SELECT * FROM pool WHERE q=:q
             UNION ALL
             SELECT e.q,e.cid,'["keyword"]',e.excerpt FROM photo_review e WHERE e.q=:q
               AND NOT EXISTS (SELECT 1 FROM pool p WHERE p.q=e.q AND p.cid=e.cid)
-        ) SELECT p.* FROM candidates p LEFT JOIN label l USING(q,cid)
-            WHERE l.cid IS NULL ORDER BY json_array_length(p.routes),p.cid""",{"q":query}).fetchall()
+        ) SELECT p.*,c.cid IS NOT NULL AS automatic FROM candidates p LEFT JOIN label l USING(q,cid)
+            LEFT JOIN consensus_label c USING(q,cid)
+            WHERE l.cid IS NULL OR (:target AND c.cid IS NOT NULL)
+            ORDER BY l.cid IS NOT NULL,json_array_length(p.routes),p.cid""",
+            {"q":query,"target":bool(needs_target)}).fetchall()
         for p in pending:
             if done >= limit:
                 break
+            if p["automatic"] and not needs_target:
+                continue
             # All disagreements are reviewed, including reranker/LLM negatives.
             emit(f"\n{query}\n{p['cid']}\n{p['excerpt']}")
             paths = []
@@ -199,7 +230,9 @@ def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
                         photo = paths[int(choice_id)-1]
                         break
             with ev:
-                ev.execute("INSERT INTO label VALUES (?,?,?,?)",(query,p["cid"],choice=="y",photo))
+                save_owner_label(ev,query,p["cid"],choice=="y",photo)
+            if photo:
+                needs_target = False
             done += 1
     return done
 

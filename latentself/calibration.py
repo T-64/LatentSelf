@@ -10,7 +10,7 @@ import numpy as np
 
 from .backends.embed import VL, TEXT, Reranker
 from .backends.llm import LocalLLM
-from .evaluation import default_backends, evaluation_vector
+from .evaluation import default_backends, evaluation_vector, has_photo_target
 from .search import VectorIndex, _judge, _previews, configured_indexes, expand, matching_turns, rank_conversations
 
 
@@ -111,6 +111,8 @@ def calibrate(con,ev,rows,backends=None,llm=None,reranker=None,*,score_only=Fals
             pool = {r[0] for r in ev.execute("SELECT cid FROM pool WHERE q=?",(query,))}
             if not pool or pool-gold.keys():
                 raise ValueError(f"query {n}: comparison pool requires owner review")
+            if row.get("photo") and not has_photo_target(ev,query):
+                raise ValueError(f"query {n}: identify the target with --label or --target-photo")
             eligible = image_turns if row.get("photo") else set(idx.ids)
             terms = [query,*expand(con,llm,query)]
             keywords = Counter(tid for t in dict.fromkeys(terms) for tid in matching_turns(con,t) if tid in eligible)
