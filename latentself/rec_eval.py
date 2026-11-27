@@ -26,7 +26,7 @@ def split(positive):
 def historical_states(con,cutoff):
     states = {}
     for iid,ts,status in con.execute("""SELECT m.item_id,t.ts,m.status FROM item_mention m JOIN turn t ON t.id=m.turn_id
-        WHERE m.status IN ('watched','wanted') ORDER BY t.ts,m.turn_id"""):
+        WHERE t.ts!='' AND m.status IN ('watched','wanted') ORDER BY t.ts,m.turn_id"""):
         if instant(ts)<instant(cutoff):
             states[iid] = status
     for ts,value in con.execute("""SELECT t.ts,s.value FROM signal s JOIN turn t ON t.id=s.turn_id
@@ -66,7 +66,7 @@ def backtest(con,run,model):
     mention_table(con)
     positive = {}
     for iid,ts in con.execute("""SELECT s.item_id,t.ts FROM item_state s JOIN item_mention m ON m.item_id=s.item_id
-        JOIN turn t ON t.id=m.turn_id WHERE (s.rating=1 OR s.status='watched') AND (m.status='watched' OR m.sentiment=1)
+        JOIN turn t ON t.id=m.turn_id WHERE t.ts!='' AND (s.rating=1 OR s.status='watched') AND (m.status='watched' OR m.sentiment=1)
         AND m.status!='mentioned_only' ORDER BY t.ts,t.id"""):
         positive.setdefault(iid,ts)
     cutoff,training,held = split(positive.items())

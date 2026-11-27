@@ -42,25 +42,31 @@ def instant(ts):
 
 def units(con,recompute=False):
     rows = sorted(con.execute(f"SELECT id,ts,prompt,is_paste FROM turn WHERE kind IN {DIALOGUE}"),
-                  key=lambda r:(instant(r["ts"]),r["id"]))
+                  key=lambda r:(bool(r["ts"]),instant(r["ts"]) if r["ts"] else None,r["id"]))
     groups = []
     previous = None
     with con:
         con.execute("DELETE FROM episode_turn")
         con.execute("DELETE FROM episode")
         for row in rows:
+            if recompute or row["is_paste"] is None:
+                con.execute("UPDATE turn SET is_paste=? WHERE id=?",(int(is_paste(row["prompt"])),row["id"]))
+            if not row["ts"]:
+                continue
             now = instant(row["ts"])
             if previous is None or now-previous>timedelta(minutes=30):
                 groups.append([])
             groups[-1].append(row)
             previous = now
-            if recompute or row["is_paste"] is None:
-                con.execute("UPDATE turn SET is_paste=? WHERE id=?",(int(is_paste(row["prompt"])),row["id"]))
         for group in groups:
             first,last = group[0],group[-1]
             con.execute("INSERT INTO episode VALUES (?,?,?,?)",(first["id"],first["ts"],last["ts"],len(group)))
             con.executemany("INSERT INTO episode_turn VALUES (?,?)",[(first["id"],row["id"]) for row in group])
-    return dict(turns=len(rows),episodes=len(groups))
+    result = dict(turns=len(rows),episodes=len(groups))
+    undated = len(rows) - sum(len(group) for group in groups)
+    if undated:
+        result["undated"] = undated
+    return result
 
 
 def review_paste(con,out,count,seed=42,answer=None):

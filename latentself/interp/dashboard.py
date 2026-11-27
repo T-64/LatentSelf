@@ -80,7 +80,7 @@ def build(con,client,run,out,limit=None):
     for row in features[:limit]:
         feature = row["feature"]
         hits = search_feature(con,run,feature)
-        weeks = Counter(instant(h["ts"]).strftime("%G-W%V") for h in hits)
+        weeks = Counter((instant(h["ts"]).strftime("%G-W%V") if h["ts"] else "日期未知") for h in hits)
         maximum = hits[0]["act"]
         hist = Counter(min(9,int(10*h["act"]/maximum)) for h in hits)
         bins = {f"{maximum*i/10:.2g}–{maximum*(i+1)/10:.2g}":hist[i] for i in range(10)}

@@ -97,7 +97,7 @@ def digests(con,llm,out,level=None,period=None,budget=12000):
     months = con.execute(f"""SELECT substr(t.ts,1,7) AS month,min(substr(t.ts,1,10)),max(substr(t.ts,1,10)),
         tc.conv_id,count(*),c.title,s.summary FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id
         JOIN conversation c ON c.id=tc.conv_id LEFT JOIN conv_summary s ON s.conv_id=c.id
-        WHERE t.kind IN {DIALOGUE} GROUP BY month,tc.conv_id ORDER BY month,min(t.ts),tc.conv_id""")
+        WHERE t.kind IN {DIALOGUE} AND t.ts!='' GROUP BY month,tc.conv_id ORDER BY month,min(t.ts),tc.conv_id""")
     for month,first,last,cid,n_turns,title,summary in months:
         if period and period not in (month,quarter(month),month[:4]):
             continue

@@ -26,7 +26,7 @@ def item_text(row):
 def length_scales(con,run,before=None):
     bound = instant(before) if before else None
     rows = [(r[0],r[1]) for r in con.execute("""SELECT s.unit_id,s.n_tokens,t.ts FROM sae_unit s JOIN turn t ON t.id=s.unit_id
-        WHERE s.run_id=? ORDER BY s.n_tokens,s.unit_id""",(run,)) if bound is None or instant(r[2])<bound]
+        WHERE s.run_id=? ORDER BY s.n_tokens,s.unit_id""",(run,)) if bound is None or (r[2] and instant(r[2])<bound)]
     if not rows:
         raise ValueError("personal SAE coverage is required")
     groups = np.array_split(np.arange(len(rows)),min(10,len(rows)))
@@ -117,14 +117,14 @@ def feedback_factors(con,run,before=None):
 def taste(con,run,model,before=None,half_life=180):
     items = [(r[0],instant(r[1]),bool(r[2]),np.frombuffer(r[3],dtype="<f2").astype(np.float32))
              for r in con.execute("""SELECT t.id,t.ts,t.is_paste,e.vec FROM turn t JOIN embedding e ON e.item_id=t.id
-                 WHERE e.item_kind='turn_self' AND e.model=?""",(model,)) if not before or instant(r[1])<instant(before)]
+                 WHERE t.ts!='' AND e.item_kind='turn_self' AND e.model=?""",(model,)) if not before or instant(r[1])<instant(before)]
     if not items:
         raise ValueError("no personal vectors in the date interval")
     ref = instant(before) if before else max(v[1] for v in items)
     allowed = json.loads(os.environ.get("LATENTSELF_CULTURE_TOPICS",'["电影","影视","文化","娱乐","艺术","影评"]'))
     cultural = {tid for tid,name,last in con.execute("""SELECT tc.turn_id,t.name,t.last_ts FROM topic t JOIN topic_member m
         ON m.topic_id=t.id JOIN turn_conv tc ON tc.conv_id=m.conv_id WHERE t.name IS NOT NULL""")
-        if any(word in name for word in allowed) and (not before or instant(last)<ref)}
+        if any(word in name for word in allowed) and (not before or (last and instant(last)<ref))}
     center = np.zeros_like(items[0][3])
     recent = []
     decays = {}

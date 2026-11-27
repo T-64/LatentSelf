@@ -16,7 +16,7 @@ from .backends.embed import Embedder, Reranker, VL, TEXT, INSTRUCTION
 from .backends.llm import LocalLLM
 
 
-from .sources import conversation_url
+from .sources import conversation_url, turn_order
 
 
 def matching_turns(con, text, answers=False):
@@ -138,8 +138,8 @@ def configured_indexes(con, policy, *, visual=None, text=None):
 
 def _previews(con, cid, hits, terms, answers, stats):
     meta = con.execute("SELECT first_ts,last_ts,n_turns FROM conversation WHERE id=?", (cid,)).fetchone()
-    first = con.execute("""SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id
-        WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live','canvas') ORDER BY t.ts,t.id LIMIT 1""",(cid,)).fetchone()[0]
+    first = con.execute(f"""SELECT prompt FROM turn t JOIN turn_conv tc ON tc.turn_id=t.id
+        WHERE tc.conv_id=? AND t.kind IN ('prompt','branch','link_import','live','canvas') ORDER BY {turn_order(con,cid)} LIMIT 1""",(cid,)).fetchone()[0]
     ordered = sorted(hits.items(),key=lambda item:(-item[1][0],item[0]))
     evidence, snippets = [], []
     paths = []

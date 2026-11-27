@@ -103,7 +103,7 @@ def profile(con,run,half_life_days=180,before=None,limit=50):
     bound = instant(before) if before else None
     rows = con.execute("""SELECT a.unit_id,a.feature,a.act_z,t.ts,t.is_paste,f.enrich_z FROM sae_act a
         JOIN turn t ON t.id=a.unit_id JOIN feature f ON f.run_id=a.run_id AND f.feature=a.feature
-        WHERE a.run_id=? AND f.enrich_z>0 AND a.act_z IS NOT NULL ORDER BY t.ts DESC,t.id""",(run,))
+        WHERE t.ts!='' AND a.run_id=? AND f.enrich_z>0 AND a.act_z IS NOT NULL ORDER BY t.ts DESC,t.id""",(run,))
     weights = Counter()
     evidence = defaultdict(list)
     ref = bound

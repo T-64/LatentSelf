@@ -47,6 +47,15 @@ class StudioIngest(unittest.TestCase):
         self.assertEqual([r["prompt"] for r in rows],["sample phrase","second"])
         self.assertEqual({r["url"] for r in rows},{self.row["url"]})
 
+    def test_undated_prompts_stay_searchable_outside_calendar_buckets(self):
+        from latentself.units import units
+        from latentself.analysis.stats import overview
+        self.write([self.row])
+        ingest(self.db,self.root)
+        counts=units(self.db)
+        self.assertEqual((counts["turns"],counts["episodes"],counts["undated"]),(1,0,1))
+        self.assertEqual(overview(self.db)["histograms"]["date_quality"]["unknown"],1)
+
     def test_invalid_record_rolls_back_batch(self):
         self.write([self.row,dict(self.row,drive_id="../invalid")])
         with self.assertRaises(ValueError):

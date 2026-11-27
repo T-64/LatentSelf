@@ -87,10 +87,10 @@ def build(con,model,seed=42,partition=leiden,*,server=False):
                 indexes = sorted(members)
                 center = normalized(matrix[indexes].mean(axis=0))
                 parent = max(parents,key=lambda p:len(members&parents[p])/len(members|parents[p])) if parents else None
-                stamps = sorted(ts for i in indexes for ts in dates[ids[i]])
+                stamps = sorted(ts for i in indexes for ts in dates[ids[i]] if ts)
                 recurs,active_days = recurrence(stamps)
                 con.execute("INSERT INTO topic VALUES (?,?,?,NULL,?,?,?,?,?)",
-                            (name,resolution,parent,len(members),stamps[0],stamps[-1],recurs,active_days))
+                            (name,resolution,parent,len(members),stamps[0] if stamps else None,stamps[-1] if stamps else None,recurs,active_days))
                 con.executemany("INSERT INTO topic_member VALUES (?,?,?)",[(name,ids[i],float(matrix[i]@center)) for i in indexes])
             parents = groups
             result[str(resolution)] = len(groups)

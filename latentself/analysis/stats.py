@@ -23,10 +23,13 @@ def overview(con):
     zones = periods()
     groups = defaultdict(Counter)
     for ts,prompt in con.execute(f"SELECT ts,prompt FROM turn WHERE kind IN {DIALOGUE}"):
-        date = local(ts,zones)
-        groups["month"][date.strftime("%Y-%m")] += 1
-        groups["weekday"][str(date.isoweekday())] += 1
-        groups["hour"][str(date.hour)] += 1
+        if ts:
+            date = local(ts,zones)
+            groups["month"][date.strftime("%Y-%m")] += 1
+            groups["weekday"][str(date.isoweekday())] += 1
+            groups["hour"][str(date.hour)] += 1
+        else:
+            groups["date_quality"]["unknown"] += 1
         length = next((n for n in (50,200,800,2000,6000) if len(prompt)<=n),None)
         groups["prompt_length"][f"≤{length}" if length else ">6000"] += 1
         zh = sum("\u3400"<=c<="\u9fff" for c in prompt)
@@ -62,7 +65,9 @@ def split_groups(con,preset):
         (SELECT max(c.n_turns) FROM turn_conv tc JOIN conversation c ON c.id=tc.conv_id WHERE tc.turn_id=t.id)
         FROM turn t WHERE t.kind IN {DIALOGUE}""")
     for tid,ts,image,attachment,length in rows:
-        date = local(ts,zones)
+        if not ts and (intervals or preset in ("life","night")):
+            continue
+        date = local(ts,zones) if ts else None
         if intervals:
             for (start,end),dest in zip(intervals,(a,b)):
                 if start<=date.date().isoformat()<=end:
@@ -89,7 +94,8 @@ def timeline(con,level=1.):
     for row in rows:
         topic = result.setdefault(row["id"],dict(id=row["id"],name=row["name"],n_recur=row["n_recur"],
             active_days=row["active_days"],first_ts=row["first_ts"],last_ts=row["last_ts"],months={}))
-        topic["months"][row["month"]] = row["turns"]
+        topic["months"][row["month"] or "unknown"] = row["turns"]
     for topic in result.values():
-        topic["duration_days"] = (instant(topic["last_ts"])-instant(topic["first_ts"])).days
+        topic["duration_days"] = ((instant(topic["last_ts"])-instant(topic["first_ts"])).days
+                                  if topic["first_ts"] and topic["last_ts"] else None)
     return list(result.values())
