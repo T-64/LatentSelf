@@ -49,6 +49,8 @@ scripts/server/down.sh embed
 
 向量服务默认按单模型运行分配显存，`LATENTSELF_GPU_MEMORY_FRACTION` 可指定 vLLM 使用的显存比例。实测多服务共用显卡时，可以用 `LATENTSELF_KV_CACHE_BYTES` 指定每个新建向量或重排实例的 KV 缓存字节数。比较模型时可依次加载，每种模型的评测查询向量会保存在 Mac 的私有评测库中。
 
+建完多模态索引后，日常文字搜图和文字检索可以使用 `scripts/server/up.sh query`。该实例使用同一份 VL 权重，只加载文字查询所需部分，默认分配 1.5 GiB KV 缓存。已用 9 条查询核对过它与完整实例的输出，并实测可与 `llm-private` 共用 48 GiB 显卡。它与 `embed` 共用端口 8001。切换前用 `scripts/server/down.sh` 停掉当前角色，补算图片向量时启动 `embed`。
+
 ### 模型比较与验收
 
 私有查询文件默认为 `$LATENTSELF_DATA/processed/latentself/eval/queries.yaml`，顶层 `queries` 列表的每项使用 `q`，照片项加 `photo: true`。标签保存在同目录的 `labels.sqlite3`。以下步骤先构建小范围比较语料（扩展关键词命中和照片轮次），模型选择之后再建立全量索引。

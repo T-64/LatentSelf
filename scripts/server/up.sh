@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
-    embed|text|rerank|llm|llm-private) ;;
-    *) echo "usage: $0 embed|text|rerank|llm|llm-private" >&2; exit 2 ;;
+    embed|query|text|rerank|llm|llm-private) ;;
+    *) echo "usage: $0 embed|query|text|rerank|llm|llm-private" >&2; exit 2 ;;
 esac
-fraction=${LATENTSELF_GPU_MEMORY_FRACTION:-0.80}
+default_fraction=0.80
+default_kv=auto
+if [[ $1 == query ]]; then
+    default_fraction=0.36
+    default_kv=1610612736
+fi
+fraction=${LATENTSELF_GPU_MEMORY_FRACTION:-$default_fraction}
 [[ $fraction =~ ^0\.[0-9]+$ ]] || { echo "invalid GPU memory fraction" >&2; exit 2; }
-kv_bytes=${LATENTSELF_KV_CACHE_BYTES:-auto}
+kv_bytes=${LATENTSELF_KV_CACHE_BYTES:-$default_kv}
 [[ $kv_bytes == auto || $kv_bytes =~ ^[1-9][0-9]*$ ]] || { echo "invalid KV cache byte count" >&2; exit 2; }
 ssh -o BatchMode=yes server bash -s -- "$1" "$fraction" "$kv_bytes" <<'REMOTE'
 set -euo pipefail
@@ -22,12 +28,20 @@ if [[ $role == llm ]]; then
     exit
 fi
 case "$role" in
-    embed) model=Qwen/Qwen3-VL-Embedding-8B; port=8001; revision=2c4565515e0f265c6511776e7193b22c0968ddc7 ;;
+    embed|query) model=Qwen/Qwen3-VL-Embedding-8B; port=8001; revision=2c4565515e0f265c6511776e7193b22c0968ddc7 ;;
     text) model=Qwen/Qwen3-Embedding-8B; port=8003; revision=1d8ad4ca9b3dd8059ad90a75d4983776a23d44af ;;
     rerank) model=Qwen/Qwen3-VL-Reranker-8B; port=8002; revision=b212dc8c91a8164aef1ea2de9c1a867611e75c04 ;;
     llm-private) port=8010 ;;
 esac
 name="latentself-$role"
+if [[ $role == embed || $role == query ]]; then
+    other=embed
+    [[ $role == embed ]] && other=query
+    if [[ $(docker inspect -f '{{.State.Running}}' "latentself-$other" 2>/dev/null || :) == true ]]; then
+        echo "$other already serves port 8001. Stop it before starting $role." >&2
+        exit 1
+    fi
+fi
 wait_ready() {
     for ((attempt=0; attempt<150; attempt++)); do
         if curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
@@ -73,7 +87,9 @@ extra=()
 if [[ $3 != auto ]]; then
     extra+=(--kv-cache-memory-bytes "$3")
 fi
-if [[ $role != text ]]; then
+if [[ $role == query ]]; then
+    extra+=(--language-model-only)
+elif [[ $role != text ]]; then
     extra+=(--limit-mm-per-prompt '{"image":3,"video":0}')
 fi
 if [[ $role == rerank ]]; then
