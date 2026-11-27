@@ -68,15 +68,19 @@ class VectorIndex:
         self.ids = ids
         self.vectors = np.asarray(vectors,dtype=np.float32)
 
-    def recall(self, query, eligible, threshold, k):
+    def scores(self, query, eligible):
         if not self.ids:
-            return {}, 0
+            return {}
         q = self.backend.embed_texts([query],kind="query")[0]
         scores = self.vectors @ q
         best = {}
         for tid,score in zip(self.ids,scores,strict=True):
             if tid in eligible:
                 best[tid] = max(float(score),best.get(tid,-1.0))
+        return best
+
+    def recall(self, query, eligible, threshold, k):
+        best = self.scores(query,eligible)
         ordered = sorted(best.items(),key=lambda x:(-x[1],x[0]))
         kept = {tid:s for i,(tid,s) in enumerate(ordered) if i < k or (threshold is not None and s>=threshold)}
         return kept,len(best)-len(kept)
@@ -131,14 +135,14 @@ def _previews(con, cid, hits, terms, answers, stats):
                 url=f"https://gemini.google.com/app/{cid}"), evidence[:1500]
 
 
-def _judge(con,llm,query,items,policy,reranker):
+def _judge(con,llm,query,items,policy,reranker,use_cache=True):
     schema = {"type":"object","required":["results"],"properties":{"results":{"type":"array","items":{
         "type":"object","required":["conv_id","relevant","reason"],"properties":{"conv_id":{"type":"string"},
         "relevant":{"type":"boolean"},"reason":{"type":"string"}}}}}}
     verdicts, pending = {}, []
     for cid,material in items.items():
         key = _key("judge-v1",llm.model,policy,query,cid,material)
-        value = cached(con,key)
+        value = cached(con,key) if use_cache else None
         if value is None:
             pending.append((cid,material,key))
         else:
@@ -153,7 +157,8 @@ def _judge(con,llm,query,items,policy,reranker):
                     border.append(entry)
                 else:
                     value = {"relevant":score>=policy["rerank_high"],"reason":f"reranker {score:.4f}"}
-                    remember(con,key,"judge",value)
+                    if use_cache:
+                        remember(con,key,"judge",value)
                     verdicts[cid] = value
         pending = border
     for batch in batched(pending,9):
@@ -167,9 +172,24 @@ def _judge(con,llm,query,items,policy,reranker):
                                                               isinstance(r.get("reason"),str) for r in rows.values()):
             raise ValueError("incomplete relevance judgments")
         for cid,_,key in batch:
-            remember(con,key,"judge",rows[cid])
+            if use_cache:
+                remember(con,key,"judge",rows[cid])
             verdicts[cid] = rows[cid]
     return verdicts
+
+
+def rank_conversations(keywords,vector,memberships):
+    max_kw = max(keywords.values(),default=1)
+    groups = defaultdict(dict)
+    ids = keywords.keys() | vector.keys()
+    for cid,tid in memberships:
+        if tid in ids:
+            routes = ({"keyword"} if tid in keywords else set()) | ({"semantic"} if tid in vector else set())
+            score = max(keywords.get(tid,0)/max_kw,(vector.get(tid,-1)+1)/2)
+            groups[cid][tid] = (score,routes)
+    ranked = sorted(((max(v[0] for v in hits.values())+0.05*math.log1p(len(hits)),cid)
+                     for cid,hits in groups.items()),key=lambda x:(-x[0],x[1]))
+    return ranked,groups
 
 
 def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answers=False,terms=None,
@@ -215,16 +235,7 @@ def search(con,query,*,mode="fast",images_only=False,since=None,until=None,answe
         notices.insert(0,"仅关键词检索：当前查询没有可用的向量命中。")
     elif "threshold" not in policy:
         notices.append(f"阈值待标定，本次向量召回只取前 {top_k} 轮。")
-    max_kw = max(keywords.values(),default=1)
-    groups = defaultdict(dict)
-    ids = keywords.keys() | vector.keys()
-    for cid,tid in con.execute("SELECT conv_id,turn_id FROM turn_conv"):
-        if tid in ids:
-            routes = ({"keyword"} if tid in keywords else set()) | ({"semantic"} if tid in vector else set())
-            score = max(keywords.get(tid,0)/max_kw,(vector.get(tid,-1)+1)/2)
-            groups[cid][tid] = (score,routes)
-    ranked = sorted(((max(v[0] for v in hits.values())+0.05*math.log1p(len(hits)),cid)
-                     for cid,hits in groups.items()),key=lambda x:(-x[0],x[1]))
+    ranked,groups = rank_conversations(keywords,vector,con.execute("SELECT conv_id,turn_id FROM turn_conv"))
     stats["conversations_omitted"] = max(0,len(ranked)-cap)
     rows, evidence = [], {}
     for score,cid in ranked[:cap]:

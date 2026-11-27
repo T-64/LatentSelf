@@ -123,11 +123,24 @@ def cmd_enrich(a):
 
 
 def cmd_embed(a):
-    from .backends.embed import Embedder
+    from .backends.embed import Embedder, TEXT, VL
     from .embed import index
-    result = index(_con(), Embedder(a.model), limit=a.limit)
-    print(json.dumps(result, ensure_ascii=False))
-    if result["failed"]:
+    from .evaluation import default_backends
+    from .search import read_policy
+    con = _con()
+    if a.model:
+        jobs = [(Embedder(a.model),("turn","turn_self"))]
+    elif read_policy(con).get("text_model")==TEXT:
+        visual,text = default_backends()
+        jobs = [(text,("turn","turn_self")),(visual,())]
+    else:
+        jobs = [(Embedder(VL),("turn","turn_self"))]
+    failed = 0
+    for backend,kinds in jobs:
+        result = index(con,backend,limit=a.limit,kinds=kinds)
+        print(json.dumps({"model":backend.model,**result},ensure_ascii=False))
+        failed += result["failed"]
+    if failed:
         sys.exit(1)
 
 
@@ -173,6 +186,9 @@ def cmd_eval(a):
             print(n,json.dumps(out))
     elif a.label:
         print("已标注",ev.label_batch(con,labels,rows))
+    elif a.calibrate:
+        from .calibration import calibrate
+        print(json.dumps(calibrate(con,labels,rows),ensure_ascii=False,indent=2))
     else:
         report = list(ev.evaluate(con,labels,rows))
         print(json.dumps(report,ensure_ascii=False,indent=2))
@@ -198,10 +214,11 @@ def main(argv=None):
     group.add_argument("--index-pool",choices=[VL,TEXT])
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--label",action="store_true")
+    group.add_argument("--calibrate",action="store_true")
     s.set_defaults(f=cmd_eval)
     s = sub.add_parser("embed", help="index new or changed model inputs")
     s.add_argument("--limit", type=int)
-    s.add_argument("--model", choices=[VL,TEXT], default=VL)
+    s.add_argument("--model", choices=[VL,TEXT])
     s.set_defaults(f=cmd_embed)
     s = sub.add_parser("enrich", help="describe images and extract document text")
     s.add_argument("--images", action="store_true")
