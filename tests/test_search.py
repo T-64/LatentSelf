@@ -39,6 +39,22 @@ class SearchTest(unittest.TestCase):
         search(self.con,"unknown",llm=llm,indexes=[self.idx])
         self.assertFalse(llm.calls)
 
+    def test_strict_overlaps_cold_expansion_and_respects_explicit_terms(self):
+        rendezvous = Barrier(2, timeout=5)
+        original = self.embed.embed_texts
+        def expand(messages):
+            rendezvous.wait()
+            return {"terms":["green"]}
+        def embed(texts,kind):
+            rendezvous.wait()
+            return original(texts,kind)
+        llm = FakeLLM(expand)
+        with patch.object(self.embed,"embed_texts",side_effect=embed):
+            search(self.con,"topic",mode="strict",llm=llm,indexes=[self.idx],cap=0)
+        search(self.con,"another",mode="strict",terms=["green"],force_expand=True,
+               llm=llm,indexes=[self.idx],cap=0)
+        self.assertEqual(len(llm.calls),1)
+
     def test_parallel_judgments_keep_batches_separate_and_reuse_committed_rows(self):
         from latentself.search import _judge
         both = Barrier(2,timeout=5)
