@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+    reader9|reader27-offload|reader27-int8)
+        exec bash "$(dirname "$0")/start-reader.sh" "$1" ;;
+esac
+case "${1:-}" in
     embed|query|text|rerank|llm|llm-private) ;;
     *) echo "usage: $0 embed|query|text|rerank|llm|llm-private" >&2; exit 2 ;;
 esac

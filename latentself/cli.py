@@ -266,6 +266,14 @@ def cmd_analyze(a):
         sys.exit(1)
 
 
+def cmd_interp(a):
+    from .interp.commands import dispatch
+    result = dispatch(_con(),config.OUT,a)
+    print(json.dumps(result,ensure_ascii=False))
+    if isinstance(result,dict) and (result.get("failed") or result.get("interrupted")):
+        sys.exit(1)
+
+
 def cmd_topics(a):
     from .analysis.report import analyze
     from .backends.embed import VL
@@ -301,6 +309,19 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("interp",help="compare readers and encode selected sparse features")
+    steps = s.add_subparsers(dest="action",required=True)
+    experiment = steps.add_parser("experiment")
+    experiment.add_argument("--model",choices=("9b","27b"))
+    experiment.add_argument("--precision",choices=("bf16","bf16-offload","int8"))
+    experiment.add_argument("--count",type=int,default=2000)
+    experiment.add_argument("--select",action="store_true")
+    encoder = steps.add_parser("encode")
+    encoder.add_argument("--answers",action="store_true")
+    encoder.add_argument("--limit",type=int)
+    steps.add_parser("baseline")
+    steps.add_parser("label").add_argument("--limit",type=int)
+    s.set_defaults(f=cmd_interp)
     s = sub.add_parser("topics",help="cluster, name and compare conversation topics")
     s.add_argument("action",choices=("build","name","report"))
     s.set_defaults(f=cmd_topics)
