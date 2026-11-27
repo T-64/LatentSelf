@@ -104,7 +104,7 @@ def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
     for row in rows:
         query = row["q"]
         pending = ev.execute("""SELECT p.* FROM pool p LEFT JOIN label l USING(q,cid)
-            WHERE p.q=? AND l.cid IS NULL ORDER BY length(p.routes),p.cid""",(query,)).fetchall()
+            WHERE p.q=? AND l.cid IS NULL ORDER BY json_array_length(p.routes),p.cid""",(query,)).fetchall()
         for p in pending:
             if done >= limit:
                 break

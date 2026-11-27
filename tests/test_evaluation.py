@@ -43,7 +43,8 @@ class EvaluationTest(unittest.TestCase):
             ev = evaluation_db(root/"labels.sqlite3")
             self.addCleanup(con.close)
             self.addCleanup(ev.close)
-            ev.executemany("INSERT INTO pool VALUES ('synthetic: label',?,'[]','fixture')",[('a',),('b',)])
+            ev.executemany("INSERT INTO pool VALUES ('synthetic: label',?,?,'fixture')",
+                           [('a','["keyword","strict"]'),('b','["long synthetic model name"]')])
             for choice,expected in [('y',1),('q',0),('n',1)]:
                 self.assertEqual(label_batch(con,ev,rows,limit=1,ask=lambda _:choice,emit=lambda _:None),expected)
-            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{'a':1,'b':0})
+            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{'b':1,'a':0})
