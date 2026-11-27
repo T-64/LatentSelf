@@ -28,9 +28,12 @@ def _con():
 def cmd_ingest(a):
     if a.source == "aistudio":
         from .ingest import aistudio
+        from .db import connect_for_source_import
+        from contextlib import closing
         if not a.snapshot:
             raise ValueError("AI Studio import needs --snapshot DIR")
-        print(json.dumps(aistudio.ingest(_con(), a.snapshot), ensure_ascii=False, indent=2))
+        with closing(connect_for_source_import(config.DB_PATH)) as con:
+            print(json.dumps(aistudio.ingest(con, a.snapshot), ensure_ascii=False, indent=2))
         return
     from .ingest import gemini
     snap = Path(a.snapshot).expanduser() if a.snapshot else config.latest_gemini_snapshot()

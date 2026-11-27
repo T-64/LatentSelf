@@ -56,6 +56,38 @@ class StudioIngest(unittest.TestCase):
         self.assertEqual((counts["turns"],counts["episodes"],counts["undated"]),(1,0,1))
         self.assertEqual(overview(self.db)["histograms"]["date_quality"]["unknown"],1)
 
+    def test_export_reuses_bytes_by_hash_and_preserves_colliding_names(self):
+        from unittest.mock import patch
+        from scripts.export_aistudio import export
+        from base64 import b64encode
+        raw=json.dumps({"chunkedPrompt":{"chunks":[
+            {"role":"user","text":"question","inlineImage":{"data":b64encode(b"image").decode(),"mimeType":"image/png"}},
+            {"role":"model","isThought":True,"text":"private intermediate"},
+            {"role":"model","parts":[{"thought":True,"text":"internal"},{"text":"visible"}]}],
+            "pendingInputs":[{"text":"unsent"}]}}).encode()
+        h=hashlib.sha256(raw).hexdigest()
+        local=self.root/"cached"
+        local.mkdir()
+        (local/"existing").write_bytes(raw)
+        records=[dict(id=k,name="Same title",size=str(len(raw)),sha256Checksum=h,
+                      createdTime="2025-01-01",modifiedTime="2025-01-02",
+                      webViewLink="https://aistudio.google.com/app/prompts/"+k) for k in ("one","two")]
+        def remote(args,**kwargs):
+            if args[0]=="lsjson":
+                return b"[]"
+            self.assertEqual(args[:2],["backend","query"])
+            return json.dumps(records).encode()
+        output=self.root/"new"
+        with patch("scripts.export_aistudio.drive",side_effect=remote):
+            counts=export("remote:","Google AI Studio",output,[local])
+        self.assertEqual(counts["conversations"],2)
+        self.assertEqual(counts["thought_chunks_excluded"],2)
+        self.assertEqual(counts["unsent_nonempty_drafts_excluded"],2)
+        stats=ingest(self.db,output)
+        self.assertEqual(stats["imported"],2)
+        answers=self.db.execute("SELECT DISTINCT text FROM answer").fetchall()
+        self.assertEqual([r[0] for r in answers],["visible"])
+
     def test_invalid_record_rolls_back_batch(self):
         self.write([self.row,dict(self.row,drive_id="../invalid")])
         with self.assertRaises(ValueError):

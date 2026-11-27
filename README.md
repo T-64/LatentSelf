@@ -1,6 +1,6 @@
 # LatentSelf v2
 
-本地个人数据底座：把 AI 对话记录（目前支持 Gemini Takeout）导入成统一模型，在此之上做查询、画像与推荐、AI 写作，以及可视化。设计见 [docs/DESIGN.md](docs/DESIGN.md)。
+本地个人数据底座：把 AI 对话记录（支持 Gemini Takeout 和 Google AI Studio）导入成统一模型，在此之上做查询、画像与推荐、AI 写作，以及可视化。设计见 [docs/DESIGN.md](docs/DESIGN.md)。
 
 数据不进仓库：原始快照放在 `$LATENTSELF_DATA/raw/gemini/<YYYY-MM-DD>/`（默认 `~/data`），数据库放在 `$LATENTSELF_DATA/processed/latentself/ls.db`。
 
@@ -15,6 +15,18 @@ lself open <attachment_id>       # 打开附件
 ```
 
 运行测试：`python3 -m unittest discover -s tests`。测试用的是合成数据，不含真实数据。
+
+## Google AI Studio 对话
+
+用已授权的 rclone Drive 远端导出本人保存的 AI Studio 对话。把示例中的远端名换成自己的配置，并选用新的本机目录。
+
+```bash
+snapshot="$HOME/data/processed/latentself/exports/aistudio-$(date +%Y%m%d-%H%M%S)"
+python3 scripts/export_aistudio.py --remote remote: --output "$snapshot"
+lself ingest --source aistudio --snapshot "$snapshot"
+```
+
+导出按 Drive 文件 ID 区分重名对话，用 SHA-256 校验原件。可用 `--reuse DIR` 从已有的本机文件复用相同内容。语料保留消息顺序、说话人、原始链接和附件引用。未发送草稿与模型思考块仅保留在原件里。缺少事件时间的问答仍可全文检索，按日期的统计跳过这些问答。重复导入跳过相同版本，已导入对话的修订会计入 `revised_pending`，供对照两个快照核查。
 
 ## P1 附件与语义搜索
 

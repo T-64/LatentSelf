@@ -178,3 +178,15 @@ def connect(path: Path) -> sqlite3.Connection:
         con.close()
         raise
     return con
+
+
+def connect_for_source_import(path: Path) -> sqlite3.Connection:
+    """A new source needs the shared v2 tables, independently of later phase migrations."""
+    if path.is_file():
+        con = sqlite3.connect(path)
+        con.row_factory = sqlite3.Row
+        if con.execute("PRAGMA user_version").fetchone()[0] in (2, 3, 4, 5):
+            con.execute("PRAGMA foreign_keys=ON")
+            return con
+        con.close()
+    return connect(path)
