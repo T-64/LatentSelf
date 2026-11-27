@@ -187,6 +187,9 @@ def cmd_eval(a):
     from . import evaluation as ev
     from .backends.llm import LocalLLM
     rows = ev.read_queries(a.queries)
+    if a.status:
+        print(json.dumps(ev.review_status(a.queries.parent/"labels.sqlite3",rows),ensure_ascii=False,indent=2))
+        return
     con = _con()
     labels = ev.evaluation_db(a.queries.parent / "labels.sqlite3")
     if a.index_pool:
@@ -387,6 +390,7 @@ def main(argv=None):
     group.add_argument("--prepare",action="store_true")
     group.add_argument("--prepare-photo-review",action="store_true",help="queue guaranteed photo keyword matches for early review")
     group.add_argument("--label",action="store_true")
+    group.add_argument("--status",action="store_true",help="show current consensus, owner decisions and remaining review counts")
     group.add_argument("--target-photo",nargs=2,metavar=("QUERY_NUMBER","FILE"),
                        help="identify a known target photo by private query number and exact local path")
     group.add_argument("--calibrate",action="store_true")
