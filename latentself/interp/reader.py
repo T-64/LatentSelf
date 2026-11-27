@@ -138,6 +138,8 @@ def serve(reader,port,baseline=None):
         with Path(baseline).open(encoding="utf-8") as source:
             for line in source:
                 obj = json.loads(line)
+                if obj["id"] in public:
+                    raise ValueError("duplicate baseline ID in corpus; regenerate with distinct conversations")
                 public[obj["id"]] = obj
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):
