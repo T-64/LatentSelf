@@ -14,7 +14,11 @@ import unicodedata
 def signature(title,director,year):
     def fold(value):
         return "".join(c for c in unicodedata.normalize("NFKD",str(value or "")).casefold() if c.isalnum())
-    return sha256("\n".join([fold(title),fold(director),str(int(year))]).encode()).hexdigest()
+    # The published table includes multi-year productions. The catalog uses their first year.
+    start = re.fullmatch(r"(\d{4})(?:\.0|\s*[-–/]\s*\d{2,4})?",str(year).strip())
+    if not start:
+        raise ValueError("unrecognized release-year format")
+    return sha256("\n".join([fold(title),fold(director),start[1]]).encode()).hexdigest()
 
 
 def extract(path,output,year=2026):
@@ -39,7 +43,10 @@ def extract(path,output,year=2026):
             match = re.search(r"/title/(tt\d{5,12})(?:/|[?#]|$)",str(link.url_or_path if link else ""))
             if not match:
                 continue
-            digest = signature(sheet.cell_value(i,title),sheet.cell_value(i,creator),sheet.cell_value(i,release))
+            try:
+                digest = signature(sheet.cell_value(i,title),sheet.cell_value(i,creator),sheet.cell_value(i,release))
+            except ValueError:
+                continue
             if rank in result:
                 raise ValueError("ambiguous rank in the published workbook")
             result[rank] = dict(signature=digest,imdb=match[1])
