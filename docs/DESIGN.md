@@ -64,13 +64,15 @@
 
 | 任务 | 模型 | 在哪跑 |
 |---|---|---|
-| 文本 embedding | Qwen3-Embedding-8B（服务器上已有），备选 0.6B 在 Mac 上跑 | 4090 |
+| 文本和图片 embedding | Qwen3-VL-Embedding-8B（主候选，文字和图片同一个空间），在评测集上与 Qwen3-Embedding-8B 比较后定（见 P1-SPEC §5.0） | 4090 |
+| 可解释特征 | 读者模型 Qwen3.5-9B-Base + 官方 Qwen-Scope SAE（W64K），见 PIPELINE.md L4b | 4090 |
+| 重排 | Qwen3-VL-Reranker-8B | 4090 |
 | 图片描述 + OCR | Qwen3.8-27B（服务器上已有，原生视觉，llama.cpp :8000） | 4090 |
 | 语音提问转写 | faster-whisper-large-v3（服务器上已有） | 4090 |
 | 检索相关性判断、对话标题、事实抽取、每期摘要 | Qwen3.8-27B（本地，默认）；可选 Claude | 4090 / 云端 |
 | 写书、长篇复盘 | Claude（需要单次明确同意）或本地模型 | 云端 / 4090 |
 
-图片的处理策略是**先描述，再嵌入**：每张图生成一段中文描述，加上 OCR 文字，写进 `attachment.caption`，再一起建全文索引和向量。这样「我发过一张路牌的照片」就能被文字查询找到。以后如果需要以图搜图，再单独加 SigLIP 向量。
+图片的处理策略是**先描述，再嵌入**：每张图生成一段中文描述，加上 OCR 文字，写进 `attachment.caption`，再一起建全文索引和向量。这样「我发过一张路牌的照片」就能被文字查询找到。如果选用多模态 embedding（Qwen3-VL-Embedding），每张图还会直接算一个和文字同空间的图片向量，这样以图搜图、以文搜图都可以做。
 
 服务器只负责算，算完的结果回写到 Mac 上的 `ls.db`。服务器上不长期保存原始数据副本，每次处理完就删掉。
 
@@ -93,6 +95,8 @@ lself open <attachment_id>    # 在 Finder 或预览中打开
 4. **输出**：按时间排列，每个对话显示日期、轮数、标题、命中的原句、附件和 Gemini 链接。
 
 ### 4.2 画像与推荐（第三、四阶段）——LatentSelf 核心算法
+
+> **2026-11-27 更新**：潜在特征改用「读者 LLM + 官方 Qwen-Scope SAE」，不再在 embedding 上自己训练 SAE；话题、画像、推荐的流程都以 [PIPELINE.md](PIPELINE.md) 为准。下面保留原始思路，作为背景说明。
 
 #### 潜在特征：稀疏字典学习（SAE）
 
@@ -173,9 +177,11 @@ latentself/
 └── docs/DESIGN.md
 ```
 
-依赖：Python 3.12；核心只用标准库加 numpy。SAE 用 PyTorch（在 Mac 的 MPS 上即可训练，数据量很小）。Leiden 用 `leidenalg` + `igraph`。
+依赖：Mac 端用 Python 3.12，核心只用标准库加 numpy。**所有模型（embedding、reranker、LLM），以及 SAE 训练，都在服务器的 4090 上运行**，Mac 不下载、不运行模型（2026-11-27 决定，原因是 Mac 磁盘紧张，而服务器因为时差大多空闲）。Leiden 用 `leidenalg` + `igraph`。
 
 ## 6. 阶段与验收
+
+> 2026-11-27 起，各阶段的详细 spec 见 [P1](P1-SPEC.md) · [P2](P2-SPEC.md) · [P3](P3-SPEC.md) · [P4](P4-SPEC.md)，整体流程见 [PIPELINE.md](PIPELINE.md)。下表保留为概览。
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
