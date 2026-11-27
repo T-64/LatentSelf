@@ -96,6 +96,7 @@ class EvaluationTest(unittest.TestCase):
         self.assertTrue(metrics(rows[1:],gold,True)["photo_top5"])
 
     def test_yaml_and_resumable_owner_decisions(self):
+        from latentself.evaluation import review_status
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             path = root / "queries.yaml"
@@ -110,3 +111,7 @@ class EvaluationTest(unittest.TestCase):
             for choice,expected in [('y',1),('q',0),('n',1)]:
                 self.assertEqual(label_batch(con,ev,rows,limit=1,ask=lambda _:choice,emit=lambda _:None),expected)
             self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{'b':1,'a':0})
+            ev.execute("INSERT INTO photo_review VALUES ('synthetic: label','b','same candidate')")
+            ev.commit()
+            status = review_status(root/"labels.sqlite3",rows)
+            self.assertEqual(status["totals"],dict(candidates=2,consensus=0,owner=2,pending=0))
