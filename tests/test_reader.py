@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+from unittest.mock import patch
 
 from latentself.interp.reader import Reader
 
@@ -43,4 +44,9 @@ class TorchReaderTest(unittest.TestCase):
             self.assertTrue(all(0<idx<4 for _,_,idx in result["features"]))
             self.assertGreater(result["fvu"],0)
             self.assertEqual(len(reader.layers[0]._forward_hooks),0)
+            # This fixture has no cross-token attention. Rechunking cannot change its loss.
+            with patch("latentself.interp.reader.chunks", return_value=[(0,3),(2,4)]):
+                split = reader.encode_layer("demo",0,formula=formula,experiment=True)
+            self.assertEqual(split["ce_tokens"],result["ce_tokens"])
+            self.assertAlmostEqual(split["delta_ce"],result["delta_ce"],places=4)
         self.assertEqual(len(reader.neighbors(0,3)),10)

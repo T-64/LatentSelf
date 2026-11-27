@@ -106,6 +106,8 @@ lself write "一段经历" --continue
 {"mcpServers":{"latentself":{"command":"lself","args":["mcp"]}}}
 ```
 
+也可以复用本机已有 NumPy 和官方 Python MCP SDK 的解释器。将 `command` 改为该 Python 的绝对路径，`args` 设为 `["-B","-m","latentself.mcp_server"]`，并在同一服务的 `env.PYTHONPATH` 填写 LatentSelf 仓库的绝对路径即可。已验证 SDK 1.29 和 2.3 的 stdio 接口。
+
 可查询对话、日期时间线、摘要、核查过的事实和附件元数据。结果超过上限时会带有 `truncated` 和省略计数。
 
 ### 可解释特征与话题
