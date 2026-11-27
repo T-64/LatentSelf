@@ -43,7 +43,7 @@ class MigrationTest(unittest.TestCase):
             for attempt in range(2):
                 con = connect(path)
                 try:
-                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 2)
+                    self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 3)
                     self.assertEqual(dict(con.execute("SELECT id, origin FROM attachment")),
                                      {'a': 'generated', 'b': 'live_frame', 'c': 'user'})
                     self.assertEqual(con.execute("SELECT DISTINCT caption FROM attachment").fetchall()[0][0],

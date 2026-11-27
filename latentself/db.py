@@ -94,12 +94,41 @@ def _backfill_frame_origins(con):
     con.execute("INSERT INTO meta VALUES (?, '1')",(key,))
 
 
+def _create_review_tables(con):
+    statements = (
+        """CREATE TABLE conv_summary (
+            conv_id TEXT PRIMARY KEY REFERENCES conversation(id) ON DELETE CASCADE,
+            summary TEXT NOT NULL,kinds TEXT NOT NULL,model TEXT NOT NULL,
+            input_hash TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        """CREATE TABLE digest (
+            period TEXT PRIMARY KEY,level TEXT NOT NULL,body_md TEXT NOT NULL,model TEXT NOT NULL,
+            input_hash TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        """CREATE TABLE fact (
+            id TEXT PRIMARY KEY,text TEXT NOT NULL,kind TEXT NOT NULL,date_from TEXT,date_to TEXT,
+            confidence INTEGER NOT NULL CHECK(confidence BETWEEN 1 AND 3),status TEXT NOT NULL,
+            superseded_by TEXT REFERENCES fact(id),verified INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        """CREATE TABLE fact_evidence (
+            fact_id TEXT NOT NULL REFERENCES fact(id) ON DELETE CASCADE,
+            turn_id TEXT NOT NULL REFERENCES turn(id) ON DELETE CASCADE,quote TEXT NOT NULL,
+            PRIMARY KEY(fact_id,turn_id))""",
+        """CREATE TABLE fact_source (
+            conv_id TEXT PRIMARY KEY REFERENCES conversation(id) ON DELETE CASCADE,
+            input_hash TEXT NOT NULL,model TEXT NOT NULL,candidates TEXT NOT NULL,merged_hash TEXT)""",
+    )
+    for statement in statements:
+        con.execute(statement)
+    con.execute("PRAGMA user_version = 3")
+
+
 def _migrate(con: sqlite3.Connection) -> None:
     with con:
         con.execute("BEGIN IMMEDIATE")
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        if version == 2:
+        if version in (2,3):
             _backfill_frame_origins(con)
+            if version==2:
+                _create_review_tables(con)
             return
         if version != 0:
             raise ValueError(f"unsupported database version {version}")
@@ -124,8 +153,8 @@ def _migrate(con: sqlite3.Connection) -> None:
                 key TEXT PRIMARY KEY, kind TEXT NOT NULL, value TEXT NOT NULL, created_at TEXT NOT NULL
             )
         """)
-        con.execute("PRAGMA user_version = 2")
         _backfill_frame_origins(con)
+        _create_review_tables(con)
 
 
 def connect(path: Path) -> sqlite3.Connection:
