@@ -79,9 +79,46 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_turn USING fts5(
 """
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    with con:
+        con.execute("BEGIN IMMEDIATE")
+        version = con.execute("PRAGMA user_version").fetchone()[0]
+        if version == 2:
+            return
+        if version != 0:
+            raise ValueError(f"unsupported database version {version}")
+        for column in ("origin", "enrich_model", "enrich_at", "enrich_error", "tags", "content_kind"):
+            con.execute(f"ALTER TABLE attachment ADD COLUMN {column} TEXT")
+        con.execute("""
+            UPDATE attachment SET origin = CASE
+                WHEN stored_name GLOB 'watermarked_img_*' THEN 'generated'
+                WHEN lower(stored_name) LIKE '%.zip' AND EXISTS (
+                    SELECT 1 FROM turn WHERE id=attachment.turn_id AND kind='live'
+                ) THEN 'live_frame' ELSE 'user' END
+        """)
+        con.execute("""
+            CREATE TABLE embedding (
+                item_kind TEXT NOT NULL, item_id TEXT NOT NULL, model TEXT NOT NULL,
+                dim INTEGER NOT NULL, input_hash TEXT NOT NULL, vec BLOB NOT NULL,
+                PRIMARY KEY (item_kind, item_id, model)
+            )
+        """)
+        con.execute("""
+            CREATE TABLE search_cache (
+                key TEXT PRIMARY KEY, kind TEXT NOT NULL, value TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        """)
+        con.execute("PRAGMA user_version = 2")
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
-    con.executescript(SCHEMA)
+    try:
+        con.executescript(SCHEMA)
+        _migrate(con)
+    except Exception:
+        con.close()
+        raise
     return con
