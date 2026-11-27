@@ -20,7 +20,9 @@ class Reader:
         self.tokenizer = AutoTokenizer.from_pretrained(model_path,local_files_only=True,use_fast=True)
         options = dict(local_files_only=True,dtype=torch.bfloat16,device_map="auto")
         if precision=="bf16-offload":
-            options["max_memory"] = {0:"36GiB","cpu":"100GiB"}
+            from accelerate.utils import get_max_memory
+            available = get_max_memory()
+            options["max_memory"] = {0:min(36 * 2**30, available[0]), "cpu":available["cpu"] * 4 // 5}
         elif precision=="int8":
             options["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
         self.model = AutoModelForCausalLM.from_pretrained(model_path,**options).eval()
@@ -71,7 +73,8 @@ class Reader:
                 captured.update(hidden=hidden,rebuilt=rebuilt,values=values,indices=indices)
                 if experiment:
                     replacement = rebuilt.to(original.device,dtype=original.dtype).unsqueeze(0)
-                    replacement[:,0] = original[:,0]
+                    if begin == 0:
+                        replacement[:,0] = original[:,0]
                     return (replacement,*out[1:]) if isinstance(out,tuple) else replacement
             with torch.inference_mode(),ExitStack() as stack:
                 reference = self.model(batch,use_cache=False).logits if experiment else None
