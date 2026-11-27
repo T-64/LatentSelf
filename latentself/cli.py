@@ -216,12 +216,22 @@ def cmd_titles(a):
         sys.exit(1)
 
 
+def cmd_digest(a):
+    from .backends.llm import LocalLLM
+    from .digests import digests
+    print(json.dumps(digests(_con(),LocalLLM(),config.OUT,a.level,a.period),ensure_ascii=False))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("titles",help="summarize new or changed conversations")
     s.add_argument("--limit",type=int)
     s.set_defaults(f=cmd_titles)
+    s = sub.add_parser("digest",help="build cited calendar digests and their dependencies")
+    s.add_argument("--level",choices=("month","quarter","year"))
+    s.add_argument("--period")
+    s.set_defaults(f=cmd_digest)
     s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
     s.add_argument("query")
     for flag in ("strict","images","answers","json"):
