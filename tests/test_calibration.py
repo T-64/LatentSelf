@@ -58,7 +58,8 @@ class CalibrationTest(unittest.TestCase):
             rows = [{"q":"fixture"}]
             ev = evaluation_db(root/"labels.db")
             self.addCleanup(ev.close)
-            self.assertEqual(list(prepare(con,ev,rows,backends,llm))[0]["candidates"],2)
+            summary = list(prepare(con,ev,rows,backends,llm))[0]
+            self.assertEqual((summary["candidates"],summary["consensus_labels"],summary["pending_owner_labels"]),(2,1,1))
             with self.assertRaisesRegex(ValueError,"owner review"):
                 calibrate(con,ev,rows,backends,llm,Reranker())
             ev.execute("INSERT INTO label VALUES ('fixture','bb',0,NULL)")
@@ -83,3 +84,13 @@ class CalibrationTest(unittest.TestCase):
             policy = {**result["selected"],"judge":"llm"}
             report = list(evaluate(con,ev,rows,indexes=[VectorIndex(con,backends[0],("turn",))],policy=policy,llm=llm))
             self.assertEqual([r["accepted"] for r in report],[True,True])
+            def disagree(messages):
+                value = reply(messages)
+                for item in value.get("results",[]):
+                    item["relevant"] = False
+                return value
+            revised = FakeLLM(disagree)
+            revised.model = "another-fixture-judge"
+            revised_pool = list(prepare(con,ev,rows,backends,revised))[0]
+            self.assertEqual((revised_pool["consensus_labels"],revised_pool["pending_owner_labels"]),(0,1))
+            self.assertEqual(dict(ev.execute("SELECT cid,relevant FROM label")),{"bb":0})

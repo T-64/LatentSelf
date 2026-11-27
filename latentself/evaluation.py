@@ -35,6 +35,8 @@ def evaluation_db(path):
             q TEXT, cid TEXT, excerpt TEXT NOT NULL, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS label (
             q TEXT, cid TEXT, relevant INTEGER NOT NULL, photo TEXT, PRIMARY KEY(q,cid));
+        CREATE TABLE IF NOT EXISTS consensus_label (
+            q TEXT, cid TEXT, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS query_vector (
             model TEXT, q TEXT, instruction TEXT, vec BLOB NOT NULL, PRIMARY KEY(model,q,instruction));
         CREATE TABLE IF NOT EXISTS rerank_batch (
@@ -93,13 +95,21 @@ def prepare(con, ev, rows, backends, llm=None):
                     for cid,turns in hits.items()}
         judgments = _judge(con,llm,query,excerpts,{},Reranker())
         with ev:
+            ev.execute("""DELETE FROM label WHERE q=? AND cid IN
+                          (SELECT cid FROM consensus_label WHERE q=?)""",(query,query))
+            ev.execute("DELETE FROM consensus_label WHERE q=?",(query,))
             ev.execute("DELETE FROM pool WHERE q=?",(query,))
             for cid,excerpt in excerpts.items():
                 if judgments[cid]["relevant"]:
                     routes[cid].add("strict")
                 ev.execute("INSERT INTO pool VALUES (?,?,?,?)",(query,cid,json.dumps(sorted(routes[cid])),excerpt))
                 if routes[cid] == {"keyword",TEXT,VL,"strict"} and not row.get("photo"):
-                    ev.execute("INSERT OR IGNORE INTO label VALUES (?,?,1,NULL)",(query,cid))
+                    inserted = ev.execute("INSERT OR IGNORE INTO label VALUES (?,?,1,NULL)",(query,cid)).rowcount
+                    if inserted:
+                        ev.execute("INSERT INTO consensus_label VALUES (?,?)",(query,cid))
+        counts["consensus_labels"] = ev.execute("SELECT count(*) FROM consensus_label WHERE q=?",(query,)).fetchone()[0]
+        counts["pending_owner_labels"] = ev.execute("""SELECT count(*) FROM pool p LEFT JOIN label l USING(q,cid)
+            WHERE p.q=? AND l.cid IS NULL""",(query,)).fetchone()[0]
         yield {"candidates":len(excerpts),"covered_turns":len(coverage),**counts}
 
 
