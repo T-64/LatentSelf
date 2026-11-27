@@ -1,5 +1,7 @@
 """Hybrid turn retrieval, conversation aggregation and cached relevance judgments."""
 from collections import defaultdict
+import base64
+import binascii
 from hashlib import sha1
 from itertools import batched
 import json
@@ -7,7 +9,7 @@ import math
 
 import numpy as np
 
-from .backends.embed import Embedder, Reranker, VL, TEXT
+from .backends.embed import Embedder, Reranker, VL, TEXT, INSTRUCTION
 from .backends.llm import LocalLLM
 
 
@@ -59,6 +61,7 @@ def expand(con, llm, query):
 
 class VectorIndex:
     def __init__(self, con, backend, kinds):
+        self.con = con
         self.backend = backend
         slots = ",".join("?" for _ in kinds)
         rows = con.execute(f"""SELECT e.vec,e.dim,COALESCE(a.turn_id,e.item_id) AS tid
@@ -71,10 +74,26 @@ class VectorIndex:
         self.ids = ids
         self.vectors = np.asarray(vectors,dtype=np.float32)
 
+    def query_vector(self,query):
+        key = _key("query-embedding-v1",self.backend.model,INSTRUCTION,query)
+        encoded = cached(self.con,key)
+        if isinstance(encoded,str):
+            try:
+                vector = np.frombuffer(base64.b64decode(encoded,validate=True),dtype="<f4")
+                if len(vector)==self.vectors.shape[1] and np.isfinite(vector).all():
+                    return vector
+            except (ValueError,binascii.Error):
+                pass
+        vector = np.asarray(self.backend.embed_texts([query],kind="query")[0],dtype="<f4")
+        if vector.shape!=(self.vectors.shape[1],) or not np.isfinite(vector).all():
+            raise ValueError("invalid query embedding")
+        remember(self.con,key,"query_vector",base64.b64encode(vector.tobytes()).decode("ascii"))
+        return vector
+
     def scores(self, query, eligible, query_vector=None):
         if not self.ids:
             return {}
-        q = self.backend.embed_texts([query],kind="query")[0] if query_vector is None else query_vector
+        q = self.query_vector(query) if query_vector is None else query_vector
         scores = self.vectors @ q
         best = {}
         for tid,score in zip(self.ids,scores,strict=True):
