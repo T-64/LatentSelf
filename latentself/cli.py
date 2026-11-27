@@ -274,6 +274,14 @@ def cmd_interp(a):
         sys.exit(1)
 
 
+def cmd_features(a):
+    from .analysis.report import selected
+    from .interp.dashboard import build
+    from .interp.encode import Client
+    con = _con()
+    print(json.dumps(build(con,Client(),selected(con),config.OUT,a.limit),ensure_ascii=False))
+
+
 def cmd_topics(a):
     from .analysis.report import analyze
     from .backends.embed import VL
@@ -309,6 +317,10 @@ def cmd_write(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("features",help="render the private static feature dashboard")
+    s.add_argument("action",choices=("build-dashboard",))
+    s.add_argument("--limit",type=int)
+    s.set_defaults(f=cmd_features)
     s = sub.add_parser("interp",help="compare readers and encode selected sparse features")
     steps = s.add_subparsers(dest="action",required=True)
     experiment = steps.add_parser("experiment")
