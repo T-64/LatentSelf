@@ -1,7 +1,6 @@
 """Frozen, source-stratified P1 review frames. All persistent rows are private."""
 from collections import Counter, defaultdict
 from contextlib import closing
-import hashlib
 import json
 from pathlib import Path
 import random
@@ -212,6 +211,7 @@ def candidate_frame(con, db, rows, backends, *, llm=None, seed=42, progress=lamb
                 tier = "S1" if len(rr)>=2 else ("S2" if verdicts[cid]["relevant"] else "S3")
                 db.execute("INSERT INTO frame VALUES(?,?,?,?,?,?,?)",(q,cid,convs[cid],tier,json.dumps(sorted(rr)),
                            excerpts[cid],conversation_url(con,cid)))
+        progress(dict(query=number,limits=review_stats))
     with db:
         draw(db,rows,seed)
         db.execute("INSERT INTO review_meta VALUES('sealed',?)",(json.dumps(rows,sort_keys=True),))

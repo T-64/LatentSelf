@@ -1,5 +1,5 @@
 """Design-weighted P1 metrics. Each query, tier and source is an independent sampling cell."""
-from collections import defaultdict
+from collections import Counter
 import json
 import numpy as np
 
@@ -121,7 +121,6 @@ def evidence_for(con,db,row,policy,indexes,llm):
         eligible &= {r[0] for r in con.execute("""SELECT turn_id FROM attachment WHERE path IS NOT NULL
                            AND (mime LIKE 'image/%' OR origin='live_frame')""")}
     terms = list(dict.fromkeys([q,*expand(con,llm,q)]))
-    from collections import Counter
     keywords = Counter(t for term in terms for t in matching_turns(con,term) if t in eligible)
     vector = {}
     for idx in indexes:
@@ -199,5 +198,6 @@ def report(con,db,rows,*,score_only=False,persist=False,llm=None,reranker=None):
         comparison["metrics"] = breakdown(data,rows,outputs,"fast")
     accepted = all(reports[m]["text"]["meets_text_gate"] and
                    all(hit is True for hit in reports[m]["photo_top5"].values()) for m in ("fast",winning))
+    limits = {q:json.loads(details) for q,details in db.execute("SELECT q,details FROM frame_stats")}
     return dict(selected=policy,accepted=accepted,model_comparison=comparisons,reports=reports,
-                review=status(db,rows),bootstrap=1000)
+                review=status(db,rows),frame_limits=limits,bootstrap=1000)
