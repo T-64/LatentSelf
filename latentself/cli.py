@@ -43,14 +43,8 @@ def cmd_stats(a):
 
 
 def _matching_turns(con, text, answers):
-    cols = ["prompt", "extra"] + (["answer"] if answers else [])
-    if len(text) >= 3:  # trigram index needs >= 3 characters
-        phrase = '"' + text.replace('"', '""') + '"'
-        expr = " OR ".join(f"{c} : {phrase}" for c in cols)
-        sql = f"SELECT turn_id FROM fts_turn WHERE fts_turn MATCH ?"
-        return [r[0] for r in con.execute(sql, (f"({expr})",))]
-    where = " OR ".join(f"instr({c}, ?) > 0" for c in cols)
-    return [r[0] for r in con.execute(f"SELECT turn_id FROM fts_turn WHERE {where}", [text] * len(cols))]
+    from .search import matching_turns
+    return matching_turns(con,text,answers)
 
 
 def cmd_grep(a):
@@ -137,9 +131,42 @@ def cmd_embed(a):
         sys.exit(1)
 
 
+def cmd_search(a):
+    from .search import search
+    result = search(_con(),a.query,mode="strict" if a.strict else "fast",images_only=a.images,
+                    answers=a.answers,terms=a.terms.split(",") if a.terms is not None else None,
+                    since=a.since,until=a.until,sort=a.sort)
+    if a.json:
+        print(json.dumps(result,ensure_ascii=False))
+        return
+    for notice in result["notices"]:
+        print(notice)
+    print(json.dumps(result["counts"],ensure_ascii=False))
+    for row in result["results"]:
+        print(f"\n{row['first_ts'][:10]} → {row['last_ts'][:10]}  {row['n_turns']}轮  {row['hits']}处命中")
+        print(row["first_prompt"])
+        for hit in row["snippets"]:
+            print(f"  {'+'.join(hit['routes'])} {hit['text']}")
+        if row["omitted_snippets"]:
+            print(f"  另有 {row['omitted_snippets']} 条命中")
+        if a.images:
+            print("\n".join(row["images"]))
+        if "reason" in row:
+            print(row["reason"])
+        print(row["url"])
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="lself", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("search", help="retrieve conversations by keyword and meaning")
+    s.add_argument("query")
+    for flag in ("strict","images","answers","json"):
+        s.add_argument("--"+flag,action="store_true")
+    for flag in ("terms","since","until"):
+        s.add_argument("--"+flag)
+    s.add_argument("--sort",choices=["time","score"],default="time")
+    s.set_defaults(f=cmd_search)
     from .backends.embed import VL, TEXT
     s = sub.add_parser("embed", help="index new or changed model inputs")
     s.add_argument("--limit", type=int)
