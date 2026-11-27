@@ -79,6 +79,11 @@ def experiment(con,client,llm,key,precision,count=2000,seed=42,emit=print,stage=
             pilot = [run(uid,text,formula,tmp_run) for uid,text in sample[:100]]
             errors[formula] = sum(r["sse"] for r in pilot)/max(1e-10,sum(r["variance"] for r in pilot))
         chosen = min(errors,key=errors.get)
+        if stage=="pilot":
+            metrics.append(dict(model=key,precision=precision,layer=layer,formula=chosen,pilot_fvu=errors,
+                                pilot_units=len(pilot),matched_units=len(sample),sample_hash=sample_key))
+            emit(f"finished formula pilot for {key} {precision} layer {layer}")
+            continue
         rid = register(con,key,precision,layer,chosen,"turn_self",sample_key)
         active = set()
         total_tokens = ce_tokens = 0
