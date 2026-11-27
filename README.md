@@ -155,4 +155,6 @@ lself rec feedback <影片ID> like
 
 元数据补全从环境变量 `TMDB_API_KEY` 读取访问凭据，按公开影片 ID 请求，并在本机缓存。缺少 ID 的影片会单列。检测和编码可使用 `--limit` 分批运行。影片理由来自选定特征和用户原话，结果在输出目录的 `rec/`。可用 `LATENTSELF_CULTURE_TOPICS` 配置文化话题名的关键词列表。
 
+TSPDT 的原始排名工作簿提供公开 IMDb 链接。在服务器用带 `xlrd` 的 Python 执行 `python -m latentself.tspdt_ids StartingList.xls ~/.cache/latentself/tspdt-2026-ids.json`，即可提取 2026 年前一千名的校验值和 ID。Mac 运行 `lself catalog import --public-ids-server`，按排名、片名、导演、年份匹配。后续导入会沿用已核实的对应关系。工作簿来源见 [TSPDT 2026 榜单与下载](https://theyshootpictures.com/gf1000.htm)。
+
 回测按对话证据时间排序，最后五分之一用于评估。时间相同的影片留在同一侧。画像、长度归一化、观看状态和显式反馈均按切分点重算。与两种基线的 Recall@50 比较通过后才可出正式片单。网格选权和指标共用这份留出集，结果仍需结合后续反馈判断。
