@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from fakes import FakeLLM
+from tests.fakes import FakeLLM
 from latentself.db import connect
 from latentself.enrich import enrich
 

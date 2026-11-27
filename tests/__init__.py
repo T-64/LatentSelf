@@ -1,0 +1,1 @@
+"""Offline LatentSelf regression tests."""

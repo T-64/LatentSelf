@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from fakes import FakeEmbed, FakeLLM
+from tests.fakes import FakeEmbed, FakeLLM
 from latentself.backends.embed import TEXT, VL
 from latentself.calibration import calibrate, cascade_bounds, choose_model
 from latentself.db import connect

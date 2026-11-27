@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fakes import FakeEmbed,FakeLLM
+from tests.fakes import FakeEmbed,FakeLLM
 from latentself.db import connect
 from latentself.embed import index
 from latentself.ingest.gemini import ingest

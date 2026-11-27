@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fakes import FakeEmbed
+from tests.fakes import FakeEmbed
 from latentself.db import connect
 from latentself.embed import index, turn_inputs
 
