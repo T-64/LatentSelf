@@ -181,6 +181,9 @@ def cmd_eval(a):
         print(json.dumps(out,ensure_ascii=False))
         if out["failed"]:
             sys.exit(1)
+    elif a.prepare_photo_review:
+        for out in ev.prepare_photo_review(con,labels,rows):
+            print(json.dumps(out))
     elif a.prepare:
         for n,out in enumerate(ev.prepare(con,labels,rows,ev.default_backends()),1):
             print(n,json.dumps(out))
@@ -216,6 +219,7 @@ def main(argv=None):
     group = s.add_mutually_exclusive_group()
     group.add_argument("--index-pool",choices=[VL,TEXT])
     group.add_argument("--prepare",action="store_true")
+    group.add_argument("--prepare-photo-review",action="store_true",help="queue guaranteed photo keyword matches for early review")
     group.add_argument("--label",action="store_true")
     group.add_argument("--calibrate",action="store_true")
     group.add_argument("--score-reranker",action="store_true",help="save measured reranker batches before loading the LLM")

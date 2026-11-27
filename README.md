@@ -67,4 +67,6 @@ lself eval
 scripts/smoke_p1.sh
 ```
 
+两个候选模型建索引期间也可以开始核对照片。运行 `lself eval --prepare-photo-review` 后，`lself eval --label` 会显示照片查询已经命中的关键词候选。它们一定进入最终候选并集，标注会沿用。完整模型比较仍由 `lself eval --prepare` 生成。
+
 校准比较两种模型的文本召回率，再比较逐个判断和分级判断的质量与耗时。分开加载 reranker 和 LLM 时，分级判断的耗时包含同一批候选先前实测的 reranker 请求时间，报告也单列这部分秒数。最终评测使用全量索引，逐查询列出漏报、误报、待标注项和照片前五命中。其明细仅保存在本地。

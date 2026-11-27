@@ -3,11 +3,35 @@ import tempfile
 import unittest
 
 from latentself.db import connect
-from latentself.evaluation import evaluation_db,extend_pool,label_batch,metrics,read_queries
+from latentself.evaluation import evaluation_db,extend_pool,label_batch,metrics,prepare_photo_review,read_queries
+from tests.fakes import FakeLLM
 from unittest.mock import patch
 
 
 class EvaluationTest(unittest.TestCase):
+    def test_early_photo_labels_survive_full_pool_preparation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            con = connect(Path(folder)/"main.db")
+            ev = evaluation_db(Path(folder)/"labels.db")
+            self.addCleanup(con.close)
+            self.addCleanup(ev.close)
+            con.execute("INSERT INTO turn VALUES ('t','fixture','prompt','2020','striped kite','snap')")
+            con.execute("INSERT INTO conversation(id,source,n_turns) VALUES ('c','fixture',1)")
+            con.execute("INSERT INTO turn_conv VALUES ('t','c',0)")
+            con.execute("INSERT INTO fts_turn VALUES ('t','striped kite','','')")
+            con.execute("""INSERT INTO attachment(id,turn_id,pos,path,stored_name,match,mime,origin)
+                VALUES ('a','t',0,'kite.jpg','kite.jpg','exact','image/jpeg','user')""")
+            rows = [{"q":"kite","photo":True}]
+            llm = FakeLLM({"terms":[f"alias{i}" for i in range(8)]})
+            for _ in range(2):
+                self.assertEqual(list(prepare_photo_review(con,ev,rows,llm))[0]["candidates"],1)
+            self.assertEqual(ev.execute("SELECT count(*) FROM pool").fetchone()[0],0)
+            responses = iter(["y","1"])
+            self.assertEqual(label_batch(con,ev,rows,ask=lambda _:next(responses),emit=lambda _:None),1)
+            ev.execute("""INSERT INTO pool VALUES ('kite','c','["keyword","strict"]','updated evidence')""")
+            self.assertEqual(label_batch(con,ev,rows,ask=lambda _:self.fail("duplicate review")),0)
+            self.assertEqual(tuple(ev.execute("SELECT relevant,photo FROM label").fetchone()),(1,"kite.jpg"))
+
     @patch("latentself.search.configured_indexes")
     @patch("latentself.evaluation.search")
     def test_full_index_candidates_extend_once(self, search, configured):

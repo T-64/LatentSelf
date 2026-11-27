@@ -31,6 +31,8 @@ def evaluation_db(path):
     con.executescript("""
         CREATE TABLE IF NOT EXISTS pool (
             q TEXT, cid TEXT, routes TEXT NOT NULL, excerpt TEXT NOT NULL, PRIMARY KEY(q,cid));
+        CREATE TABLE IF NOT EXISTS photo_review (
+            q TEXT, cid TEXT, excerpt TEXT NOT NULL, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS label (
             q TEXT, cid TEXT, relevant INTEGER NOT NULL, photo TEXT, PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS query_vector (
@@ -99,12 +101,39 @@ def prepare(con, ev, rows, backends, llm=None):
         yield {"candidates":len(excerpts),"covered_turns":len(coverage)}
 
 
+def prepare_photo_review(con, ev, rows, llm=None):
+    """Queue photo keyword hits that will belong to the final union regardless of model rank."""
+    from .embed import image_rows
+    llm = llm or LocalLLM()
+    photo_turns = {r["turn_id"] for r in image_rows(con)}
+    for number,row in enumerate(rows,1):
+        if not row.get("photo"):
+            continue
+        query = row["q"]
+        terms = list(dict.fromkeys([query, *expand(con,llm,query)]))
+        matches = {tid for term in terms for tid in matching_turns(con,term,True)} & photo_turns
+        hits = defaultdict(dict)
+        for tid,cid in con.execute("SELECT turn_id,conv_id FROM turn_conv"):
+            if tid in matches:
+                hits[cid][tid] = (1,{"keyword"})
+        with ev:
+            for cid,turns in hits.items():
+                _,excerpt = _previews(con,cid,turns,terms,True,{"judge_prompt_chars_omitted":0})
+                ev.execute("INSERT OR IGNORE INTO photo_review VALUES (?,?,?)",(query,cid,excerpt))
+        yield {"query_number":number, "candidates":len(hits)}
+
+
 def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
     done = 0
     for row in rows:
         query = row["q"]
-        pending = ev.execute("""SELECT p.* FROM pool p LEFT JOIN label l USING(q,cid)
-            WHERE p.q=? AND l.cid IS NULL ORDER BY json_array_length(p.routes),p.cid""",(query,)).fetchall()
+        pending = ev.execute("""WITH candidates AS (
+            SELECT * FROM pool WHERE q=:q
+            UNION ALL
+            SELECT e.q,e.cid,'["keyword"]',e.excerpt FROM photo_review e WHERE e.q=:q
+              AND NOT EXISTS (SELECT 1 FROM pool p WHERE p.q=e.q AND p.cid=e.cid)
+        ) SELECT p.* FROM candidates p LEFT JOIN label l USING(q,cid)
+            WHERE l.cid IS NULL ORDER BY json_array_length(p.routes),p.cid""",{"q":query}).fetchall()
         for p in pending:
             if done >= limit:
                 break
