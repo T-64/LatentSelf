@@ -1,5 +1,6 @@
 """GPU-host-only residual reader. Requests and token activations stay in memory."""
 import argparse
+from hashlib import sha256
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler,HTTPServer
 import json
@@ -128,7 +129,13 @@ class Reader:
         return list(zip(ix.tolist(),v.tolist()))
 
 
-def serve(reader,port):
+def serve(reader,port,baseline=None):
+    public = {}
+    if baseline:
+        with Path(baseline).open(encoding="utf-8") as source:
+            for line in source:
+                obj = json.loads(line)
+                public[obj["id"]] = obj
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):
             pass
@@ -146,14 +153,22 @@ def serve(reader,port):
 
         def do_POST(self):
             url = urlparse(self.path)
-            if url.path not in ("/encode","/neighbors"):
+            if url.path not in ("/encode","/neighbors","/baseline"):
                 return self.send_json(404,{"error":"unknown route"})
             try:
                 length = int(self.headers["Content-Length"])
                 if not 0<length<=32*1024*1024:
                     return self.send_json(413,{"error":"request exceeds 32 MiB"})
                 payload = json.loads(self.rfile.read(length))
-                if url.path=="/neighbors":
+                if url.path=="/baseline":
+                    if not public:
+                        return self.send_json(409,{"error":"public baseline sample is unavailable"})
+                    if payload.get("list"):
+                        result = [dict(id=uid,source=item["source"],hash=sha256(item["text"].encode()).hexdigest())
+                                  for uid,item in public.items()]
+                    else:
+                        result = reader.encode_layer(public[payload["id"]]["text"],payload["layer"])
+                elif url.path=="/neighbors":
                     result = reader.neighbors(payload["layer"],payload["feature"])
                 else:
                     feature = payload.get("feature")
@@ -177,8 +192,9 @@ def main():
     p.add_argument("--precision",choices=("bf16","bf16-offload","int8"),required=True)
     p.add_argument("--formula",choices=("card","centered"),default="card")
     p.add_argument("--port",type=int,default=8003)
+    p.add_argument("--baseline")
     a = p.parse_args()
-    serve(Reader(a.model_path,a.sae_path,a.reader,a.sae_repo,a.precision,a.formula),a.port)
+    serve(Reader(a.model_path,a.sae_path,a.reader,a.sae_repo,a.precision,a.formula),a.port,a.baseline)
 
 
 if __name__=="__main__":
