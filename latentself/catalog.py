@@ -56,7 +56,7 @@ def imdb(value):
     return m[0] if m else None
 
 
-def import_catalog(con,root,owner_map=None):
+def import_catalog(con,root,owner_map=None,public_index=None):
     root = Path(root)
     sources = json.loads((root/"tspdt-2026.json").read_text())
     private = json.loads((root/"movies-final-2026.json").read_text())
@@ -64,6 +64,15 @@ def import_catalog(con,root,owner_map=None):
     rows = [(src,row) for src in ("recommendations","top1000") for row in sources[src]]
     rows.extend(("owner_list",row) for row in private["records"])
     known = {row["canonicalKey"]:imdb(row.get("imdb")) for _,row in rows if imdb(row.get("imdb"))}
+    resolved = conflicts = 0
+    if public_index:
+        from .tspdt_ids import match_public_ids
+        for canonical,ext in match_public_ids(sources["top1000"],public_index).items():
+            if canonical not in known:
+                known[canonical] = ext
+                resolved += 1
+            elif known[canonical]!=ext:
+                conflicts += 1
     entries = defaultdict(list)
     for src,row in rows:
         canonical = row["canonicalKey"]
@@ -115,7 +124,8 @@ def import_catalog(con,root,owner_map=None):
             con.execute(f"INSERT INTO item({','.join(keys)}) VALUES ({','.join('?' for _ in keys)}) ON CONFLICT(id) "
                         f"DO UPDATE SET {updates},sources=excluded.sources,meta_hash=excluded.meta_hash "
                         "WHERE item.meta_hash IS NOT excluded.meta_hash",list(metadata.values()))
-    return dict(imported=len(entries),rows=len(rows),duplicates=len(rows)-len(entries),owner_status_unspecified=unknown_owner)
+    return dict(imported=len(entries),rows=len(rows),duplicates=len(rows)-len(entries),owner_status_unspecified=unknown_owner,
+                public_ids_added=resolved,public_id_conflicts=conflicts)
 
 
 def normalized(title):

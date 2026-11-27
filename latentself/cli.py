@@ -294,7 +294,8 @@ def cmd_catalog(a):
         source = os.environ.get("LATENTSELF_CATALOG_SRC")
         if not source:
             raise ValueError("set LATENTSELF_CATALOG_SRC to the catalog directory")
-        result = import_catalog(con,source)
+        from .tspdt_ids import server_index
+        result = import_catalog(con,source,public_index=server_index() if a.public_ids_server else None)
     elif a.action=="enrich":
         result = enrich(con,TMDB(),a.limit)
     else:
@@ -396,6 +397,7 @@ def main(argv=None):
     s.set_defaults(f=cmd_rec)
     s = sub.add_parser("catalog",help="import films and enrich public metadata by identifier")
     s.add_argument("action",choices=("import","enrich","aliases"))
+    s.add_argument("--public-ids-server",action="store_true",help="match public ranks to the server's TSPDT workbook index")
     s.add_argument("--limit",type=int)
     s.set_defaults(f=cmd_catalog)
     s = sub.add_parser("features",help="render the private static feature dashboard")
