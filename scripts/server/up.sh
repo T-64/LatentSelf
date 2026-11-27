@@ -6,7 +6,9 @@ case "${1:-}" in
 esac
 fraction=${LATENTSELF_GPU_MEMORY_FRACTION:-0.80}
 [[ $fraction =~ ^0\.[0-9]+$ ]] || { echo "invalid GPU memory fraction" >&2; exit 2; }
-ssh -o BatchMode=yes server bash -s -- "$1" "$fraction" <<'REMOTE'
+kv_bytes=${LATENTSELF_KV_CACHE_BYTES:-auto}
+[[ $kv_bytes == auto || $kv_bytes =~ ^[1-9][0-9]*$ ]] || { echo "invalid KV cache byte count" >&2; exit 2; }
+ssh -o BatchMode=yes server bash -s -- "$1" "$fraction" "$kv_bytes" <<'REMOTE'
 set -euo pipefail
 role=$1
 if [[ $role == llm ]]; then
@@ -68,6 +70,9 @@ modeldir="hub/models--${model/\//--}"
 snapshot="$modeldir/snapshots/$revision"
 test -s "$cache/$snapshot/config.json" || { echo "Model snapshot missing: $model" >&2; exit 1; }
 extra=()
+if [[ $3 != auto ]]; then
+    extra+=(--kv-cache-memory-bytes "$3")
+fi
 if [[ $role != text ]]; then
     extra+=(--limit-mm-per-prompt '{"image":3,"video":0}')
 fi
