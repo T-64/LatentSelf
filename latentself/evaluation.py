@@ -164,25 +164,34 @@ def label_batch(con, ev, rows, limit=30, ask=input, emit=print):
                 break
             # All disagreements are reviewed, including reranker/LLM negatives.
             emit(f"\n{query}\n{p['cid']}\n{p['excerpt']}")
-            while (choice:=ask("相关？ [y/n/q] ").strip().lower()) not in ("y","n","q"):
-                emit("请输入 y、n 或 q。")
-            if choice=="q":
-                return done
-            photo = None
-            if choice=="y" and row.get("photo"):
+            paths = []
+            if row.get("photo"):
                 paths = [r[0] for r in con.execute("""SELECT DISTINCT a.path FROM attachment a JOIN turn_conv tc
                     ON tc.turn_id=a.turn_id WHERE tc.conv_id=? AND a.path IS NOT NULL
                     AND (a.mime LIKE 'image/%' OR a.origin='live_frame') ORDER BY a.path""",(p["cid"],))]
                 for i,path in enumerate(paths,1):
                     emit(f"{i}  {path}")
-                if paths:
-                    while True:
-                        choice_id = ask("目标照片编号（无目标照片请回车）：").strip()
-                        if not choice_id:
-                            break
-                        if choice_id.isdecimal() and 1<=int(choice_id)<=len(paths):
-                            photo = paths[int(choice_id)-1]
-                            break
+            prompt = "相关？ [y/n/q，输入 v 编号可在本机预览] " if paths else "相关？ [y/n/q] "
+            while (choice:=ask(prompt).strip().lower()) not in ("y","n","q"):
+                command = choice.split()
+                if len(command)==2 and command[0]=="v" and command[1].isdecimal() and 1<=int(command[1])<=len(paths):
+                    path = Path(paths[int(command[1])-1]).absolute()
+                    result = subprocess.run(["/usr/bin/qlmanage","-p",str(path)],capture_output=True)
+                    if result.returncode:
+                        emit("预览未打开，可用上方路径在 Finder 中查看。")
+                else:
+                    emit("请按提示输入。")
+            if choice=="q":
+                return done
+            photo = None
+            if choice=="y" and paths:
+                while True:
+                    choice_id = ask("目标照片编号（无目标照片请回车）：").strip()
+                    if not choice_id:
+                        break
+                    if choice_id.isdecimal() and 1<=int(choice_id)<=len(paths):
+                        photo = paths[int(choice_id)-1]
+                        break
             with ev:
                 ev.execute("INSERT INTO label VALUES (?,?,?,?)",(query,p["cid"],choice=="y",photo))
             done += 1

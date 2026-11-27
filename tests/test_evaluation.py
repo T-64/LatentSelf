@@ -28,8 +28,15 @@ class EvaluationTest(unittest.TestCase):
                 self.assertEqual(summary["candidates"],1)
                 self.assertGreater(summary["judge_prompt_chars_omitted"],0)
             self.assertEqual(ev.execute("SELECT count(*) FROM pool").fetchone()[0],0)
-            responses = iter(["y","1"])
-            self.assertEqual(label_batch(con,ev,rows,ask=lambda _:next(responses),emit=lambda _:None),1)
+            responses = iter(["v 1","y","1"])
+            output = []
+            def answer(_):
+                self.assertIn("1  kite.jpg",output)
+                return next(responses)
+            with patch("latentself.evaluation.subprocess.run") as preview:
+                preview.return_value.returncode = 0
+                self.assertEqual(label_batch(con,ev,rows,ask=answer,emit=output.append),1)
+                preview.assert_called_once_with(["/usr/bin/qlmanage","-p",str(Path("kite.jpg").absolute())],capture_output=True)
             ev.execute("""INSERT INTO pool VALUES ('kite','c','["keyword","strict"]','updated evidence')""")
             self.assertEqual(label_batch(con,ev,rows,ask=lambda _:self.fail("duplicate review")),0)
             self.assertEqual(tuple(ev.execute("SELECT relevant,photo FROM label").fetchone()),(1,"kite.jpg"))
