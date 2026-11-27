@@ -1,6 +1,7 @@
 """Film representations, historical profiles, ranking and diversity constraints."""
 from collections import Counter,defaultdict
 from datetime import timedelta
+from itertools import islice
 import json
 from math import sqrt
 import os
@@ -205,22 +206,26 @@ def candidates(con,run,model,user,states):
 
 
 def rank(items,n=20,weights=DEFAULT,diversity=.7):
-    if n<1 or len(weights)!=4 or any(w<0 for w in weights) or not np.isclose(sum(weights),1):
-        raise ValueError("positive list length and four non-negative weights summing to one are required")
+    if n<1:
+        raise ValueError("positive list length required")
+    return list(islice(ranked_items(items,weights,diversity),n))
+
+
+def ranked_items(items,weights=DEFAULT,diversity=.7):
+    if len(weights)!=4 or any(w<0 for w in weights) or not np.isclose(sum(weights),1):
+        raise ValueError("four non-negative weights summing to one are required")
     pool = [dict(row,score=float(np.dot(weights,row["components"])),redundancy=0.) for row in items]
-    result = []
     directors = Counter()
     wanted = 0
-    for _ in range(n):
+    for position in range(len(pool)):
         eligible = [r for r in pool if (not r["wanted"] or wanted<4) and not any(directors[c]>=2 for c in r["creators"])]
         if not eligible:
             break
         picked = min(eligible,key=lambda r:(-(diversity*r["score"]-(1-diversity)*r["redundancy"]),r["id"]))
-        result.append(picked)
+        yield picked
         pool = [r for r in pool if r["id"]!=picked["id"]]
         wanted += picked["wanted"]
         directors.update(picked["creators"])
         for row in pool:
             sim = float(picked["vec"]@row["vec"])
-            row["redundancy"] = sim if len(result)==1 else max(row["redundancy"],sim)
-    return result
+            row["redundancy"] = sim if position==0 else max(row["redundancy"],sim)

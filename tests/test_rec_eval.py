@@ -1,15 +1,24 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import numpy as np
 
 from latentself.catalog import dumps
 from latentself.db import connect
 from latentself.rec_eval import scores,split
 from latentself.rec_output import valid_sentence
-from latentself.recommend import feedback_factors
+from latentself.recommend import feedback_factors,ranked_items
 
 
 class RecommendationEvaluationTest(unittest.TestCase):
+    def test_first_hit_after_rank_fifty_contributes_only_to_reciprocal_rank(self):
+        films = [dict(id=str(i),components=(70-i,0,0,0),wanted=False,creators=[],vec=np.array([1.]))
+                 for i in range(70)]
+        order = (r["id"] for r in ranked_items(films))
+        value = scores(order,["60"])
+        self.assertEqual(value,dict(recall20=0,recall50=0,ndcg20=0,mrr=1/61))
+        self.assertEqual(next(order),"61")
+
     def test_equal_timestamps_stay_on_one_side_and_metrics(self):
         cutoff,train,held = split([(str(i),f"2024-01-{min(i+1,9):02d}") for i in range(10)])
         self.assertEqual(held,["8","9"])

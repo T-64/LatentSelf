@@ -5,7 +5,7 @@ from math import ceil,log2
 
 from .catalog import current_id,dumps
 from .film_state import mention_table
-from .recommend import DEFAULT,candidates,rank,taste
+from .recommend import DEFAULT,candidates,ranked_items,taste
 from .units import instant
 
 
@@ -40,7 +40,12 @@ def scores(order,positive):
     gold = set(positive)
     if not gold:
         raise ValueError("empty holdout")
-    ranks = [i for i,iid in enumerate(order,1) if iid in gold]
+    ranks = []
+    for i,iid in enumerate(order,1):
+        if iid in gold:
+            ranks.append(i)
+        if i>=50 and ranks:
+            break
     dcg = sum(1/log2(r+1) for r in ranks if r<=20)
     ideal = sum(1/log2(r+1) for r in range(1,min(len(gold),20)+1))
     return dict(recall20=sum(r<=20 for r in ranks)/len(gold),recall50=sum(r<=50 for r in ranks)/len(gold),
@@ -62,8 +67,8 @@ def backtest(con,run,model):
     pool = candidates(con,run,model,user,state)
     def evaluate(weights,*,explained=False):
         options = [r for r in pool if any(v>0 for _,v in r["contributions"])] if explained else pool
-        ranked = rank(options,50,weights)
-        return scores([r["id"] for r in ranked],held)
+        order = (r["id"] for r in ranked_items(options,weights))
+        return scores(order,held)
     baseline = {k:evaluate(w) for k,w in dict(prior=(0,0,0,1),dense=(1,0,0,0)).items()}
     params = [DEFAULT]+[tuple(x/5 for x in values) for values in product(range(6),repeat=4)
                          if sum(values)==5 and values[0] and values[1]]
