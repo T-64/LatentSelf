@@ -23,6 +23,10 @@ def open_review(path, legacy=None):
         CREATE TABLE IF NOT EXISTS frame(q,cid,source,tier,routes,excerpt,url,PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS sample(q,cid,position INTEGER,PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS decision(q,cid,answer CHECK(answer IN ('y','n','s')),PRIMARY KEY(q,cid));
+        CREATE TABLE IF NOT EXISTS delegated_label(
+            q TEXT NOT NULL,cid TEXT NOT NULL,reviewer TEXT NOT NULL,
+            answer TEXT NOT NULL CHECK(answer IN ('y','n','s')),rationale TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,PRIMARY KEY(q,cid));
         CREATE TABLE IF NOT EXISTS target(q PRIMARY KEY,path);
         CREATE TABLE IF NOT EXISTS prediction(q,config,rank INTEGER,cid,PRIMARY KEY(q,config,cid));
         CREATE TABLE IF NOT EXISTS strategy(config PRIMARY KEY,model,threshold REAL);
@@ -45,7 +49,13 @@ def carry_decisions(db,path):
     if db.execute("SELECT 1 FROM review_meta WHERE k='sealed'").fetchone():
         raise ValueError("use a fresh frame to carry decisions forward")
     with closing(sqlite3.connect(Path(path).absolute().as_uri()+"?mode=ro",uri=True)) as old, db:
-        db.executemany("INSERT OR REPLACE INTO decision VALUES(?,?,?)",old.execute("SELECT q,cid,answer FROM decision"))
+        decisions = old.execute("SELECT q,cid,answer FROM decision").fetchall()
+        db.executemany("DELETE FROM delegated_label WHERE q=? AND cid=?",[(q,cid) for q,cid,_ in decisions])
+        db.executemany("INSERT OR REPLACE INTO decision VALUES(?,?,?)",decisions)
+        if old.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='delegated_label'").fetchone():
+            db.executemany("INSERT INTO delegated_label VALUES(?,?,?,?,?,?)",old.execute(
+                """SELECT a.q,a.cid,a.reviewer,a.answer,a.rationale,a.recorded_at FROM delegated_label a
+                   JOIN decision d USING(q,cid,answer)"""))
         db.executemany("INSERT OR REPLACE INTO target VALUES(?,?)",old.execute("SELECT q,path FROM target"))
 
 
@@ -241,8 +251,15 @@ def status(db,rows):
         counts.sort(key=lambda r:(r["tier"],r["source"]))
         result.append(dict(number=n,strata=counts,not_sampled=sum(x["pool"]-x["sample"] for x in counts),photo_target=(bool(db.execute("SELECT 1 FROM target WHERE q=?",(q,)).fetchone())
                                                                if row.get("photo") else None)))
-    return dict(queries=result,totals={k:sum(s[k] for r in result for s in r["strata"])
-                for k in ("pool","sample","labeled","skipped","pending")})
+    totals = {k:sum(s[k] for r in result for s in r["strata"])
+              for k in ("pool","sample","labeled","skipped","pending")}
+    reviewers = {}
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='delegated_label'").fetchone():
+        reviewers = dict(db.execute("""SELECT reviewer,count(*) FROM delegated_label
+            JOIN decision USING(q,cid,answer) JOIN sample USING(q,cid)
+            WHERE answer IN ('y','n') GROUP BY reviewer"""))
+    return dict(queries=result,totals=totals,label_sources=dict(owner=totals["labeled"]-sum(reviewers.values()),
+                                                              delegated=reviewers))
 
 
 def label_batch(db,rows,limit=30,ask=input,emit=print):

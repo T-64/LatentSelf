@@ -46,6 +46,14 @@ class StratifiedTest(unittest.TestCase):
             choices=iter(["s","y","q"])
             self.assertEqual(label_batch(db,rows,ask=lambda _:next(choices),emit=lambda _:None),2)
             self.assertEqual(status(db,rows)["totals"]["skipped"],1)
+            from latentself.stratified import carry_decisions
+            q,cid,answer=db.execute("SELECT q,cid,answer FROM decision WHERE answer='y' AND cid!='gold'").fetchone()
+            with db:
+                db.execute("INSERT INTO delegated_label VALUES(?,?,'test-reviewer',?,'fixture','now')",(q,cid,answer))
+            self.assertEqual(status(db,rows)["label_sources"],{"owner":1,"delegated":{"test-reviewer":1}})
+            fresh=open_review(p/"fresh.db");self.addCleanup(fresh.close)
+            carry_decisions(fresh,p/"sample.db")
+            self.assertEqual(fresh.execute("SELECT reviewer FROM delegated_label").fetchone()[0],"test-reviewer")
             checklist(db,rows,p/"review.html")
             self.assertIn("&lt;excerpt&gt;",(p/"review.html").read_text())
             with self.assertRaisesRegex(ValueError,"outside"):
