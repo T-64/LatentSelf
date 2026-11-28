@@ -4,7 +4,7 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import secrets
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
 
 from .stratified import check_frame, set_photo
@@ -71,11 +71,25 @@ def serve_photos(con,db,rows,emit=print):
             if q not in queries or not page.isdecimal():
                 return self.send_error(400)
             page=int(page); source=args.get("source",["all"])[0]
-            filtered=[(i,r) for i,r in enumerate(items) if source in ("all",r[1])]
+            term=args.get("term",[""])[0].strip()
+            matches=None
+            if term:
+                matches={path for path, in con.execute("""SELECT DISTINCT a.path FROM attachment a
+                    JOIN turn t ON t.id=a.turn_id WHERE a.path IS NOT NULL AND
+                    instr(lower(coalesce(a.orig_name,'') || ' ' || a.stored_name || ' ' ||
+                    coalesce(a.caption,'') || ' ' || coalesce(t.ts,'') || ' ' || coalesce(t.prompt,'')),lower(?))>0""",(term,))}
+            filtered=[(i,r) for i,r in enumerate(items) if source in ("all",r[1])
+                      and (matches is None or r[0] in matches)]
             links=[f'<a href="?q={num}">查询 {num} · {escape(txt)}</a>' for num,txt in queries.items()]
-            filters=[f'<a href="?q={q}&amp;source={s}">{s}</a>' for s in ("all","gemini","aistudio")]
+            def location(source,page):
+                return "?"+escape(urlencode(dict(q=q,source=source,term=term,page=page)),quote=True)
+            filters=[f'<a href="{location(s,0)}">{s}</a>' for s in ("all","gemini","aistudio")]
             body=['<!doctype html><meta charset="utf-8"><title>P1 照片核对</title><style>body{font:16px system-ui}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1em}img{max-width:170px;height:125px;object-fit:contain}button{display:block}small{overflow-wrap:anywhere}</style>',
                   '<h1>选择目标照片</h1>',' · '.join(links),f'<h2>{escape(queries[q])}</h2>',' · '.join(filters)]
+            body.append(f'<form method="get"><input type="hidden" name="q" value="{q}">'
+                        f'<input type="hidden" name="source" value="{escape(source,quote=True)}">'
+                        f'<label>文件名、日期、提问或图注 <input name="term" value="{escape(term,quote=True)}"></label>'
+                        '<button>筛选照片</button></form>')
             chosen=db.execute("SELECT path FROM target WHERE q=?",(queries[q],)).fetchone()
             if chosen:
                 body.append('<p>已保存：'+escape(Path(chosen[0]).name)+'</p>')
@@ -87,7 +101,7 @@ def serve_photos(con,db,rows,emit=print):
             body.append('</main>')
             for n,label in ((page-1,"上一页"),(page+1,"下一页")):
                 if n>=0 and n*24<len(filtered):
-                    body.append(f'<a href="?q={q}&amp;source={escape(source,quote=True)}&amp;page={n}">{label}</a> ')
+                    body.append(f'<a href="{location(source,n)}">{label}</a> ')
             self.reply("".join(body))
 
         def do_POST(self):

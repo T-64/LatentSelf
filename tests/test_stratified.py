@@ -100,6 +100,8 @@ class StratifiedTest(unittest.TestCase):
                 return b"".join(call.args[0] for call in sock.sendall.call_args_list)
             page=request(b"GET /demo/?source=aistudio HTTP/1.0\r\n\r\n")
             self.assertIn(b"fixture.jpg",page)
+            self.assertIn(b'<form method="post">',request(b"GET /demo/?term=FiXtuRe HTTP/1.0\r\n\r\n"))
+            self.assertNotIn(b'<form method="post">',request(b"GET /demo/?term=absent HTTP/1.0\r\n\r\n"))
             self.assertIn(b"404",request(b"GET /unknown/ HTTP/1.0\r\n\r\n"))
             response=request(b"POST /demo/ HTTP/1.0\r\nContent-Length: 7\r\n\r\nq=1&i=0")
             self.assertIn(b"303",response)
