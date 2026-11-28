@@ -76,8 +76,10 @@ def serve_photos(con,db,rows,emit=print):
             if term:
                 matches={path for path, in con.execute("""SELECT DISTINCT a.path FROM attachment a
                     JOIN turn t ON t.id=a.turn_id WHERE a.path IS NOT NULL AND
-                    instr(lower(coalesce(a.orig_name,'') || ' ' || a.stored_name || ' ' ||
-                    coalesce(a.caption,'') || ' ' || coalesce(t.ts,'') || ' ' || coalesce(t.prompt,'')),lower(?))>0""",(term,))}
+                    (instr(lower(coalesce(a.orig_name,'') || ' ' || a.stored_name || ' ' ||
+                    coalesce(a.caption,'') || ' ' || coalesce(t.ts,'') || ' ' || coalesce(t.prompt,'')),lower(?))>0
+                    OR EXISTS (SELECT 1 FROM answer v WHERE v.turn_id=t.id AND v.draft_idx=0
+                               AND instr(lower(v.text),lower(?))>0))""",(term,term))}
             filtered=[(i,r) for i,r in enumerate(items) if source in ("all",r[1])
                       and (matches is None or r[0] in matches)]
             links=[f'<a href="?q={num}">查询 {num} · {escape(txt)}</a>' for num,txt in queries.items()]
@@ -88,7 +90,7 @@ def serve_photos(con,db,rows,emit=print):
                   '<h1>选择目标照片</h1>',' · '.join(links),f'<h2>{escape(queries[q])}</h2>',' · '.join(filters)]
             body.append(f'<form method="get"><input type="hidden" name="q" value="{q}">'
                         f'<input type="hidden" name="source" value="{escape(source,quote=True)}">'
-                        f'<label>文件名、日期、提问或图注 <input name="term" value="{escape(term,quote=True)}"></label>'
+                        f'<label>文件名、日期、问答或图注 <input name="term" value="{escape(term,quote=True)}"></label>'
                         '<button>筛选照片</button></form>')
             chosen=db.execute("SELECT path FROM target WHERE q=?",(queries[q],)).fetchone()
             if chosen:

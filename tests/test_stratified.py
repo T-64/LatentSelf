@@ -87,6 +87,7 @@ class StratifiedTest(unittest.TestCase):
                 report(con,db,rows)
             photo=p/"fixture.jpg"; photo.touch()
             con.execute("INSERT INTO turn(id,source,kind,ts,prompt,snapshot) VALUES('t','aistudio','prompt','','fixture','test')")
+            con.execute("INSERT INTO answer VALUES('t',0,'','example landscape')")
             con.execute("""INSERT INTO attachment(id,turn_id,pos,stored_name,path,match,mime)
                 VALUES('p','t',0,'fixture.jpg',?,'exact','image/jpeg')""",(str(photo),))
             with patch("latentself.photo_review.HTTPServer") as server, patch("webbrowser.open"), patch("secrets.token_urlsafe",return_value="demo"):
@@ -101,6 +102,7 @@ class StratifiedTest(unittest.TestCase):
             page=request(b"GET /demo/?source=aistudio HTTP/1.0\r\n\r\n")
             self.assertIn(b"fixture.jpg",page)
             self.assertIn(b'<form method="post">',request(b"GET /demo/?term=FiXtuRe HTTP/1.0\r\n\r\n"))
+            self.assertIn(b'<form method="post">',request(b"GET /demo/?term=landscape HTTP/1.0\r\n\r\n"))
             self.assertNotIn(b'<form method="post">',request(b"GET /demo/?term=absent HTTP/1.0\r\n\r\n"))
             self.assertIn(b"404",request(b"GET /unknown/ HTTP/1.0\r\n\r\n"))
             response=request(b"POST /demo/ HTTP/1.0\r\nContent-Length: 7\r\n\r\nq=1&i=0")
